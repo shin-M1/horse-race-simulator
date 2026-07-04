@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.pyc
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Outputs
+outputs/**/*.csv
+outputs/**/*.gif
+outputs/**/*.mp4
+outputs/**/*.png
+outputs/**/*.jpg
+outputs/**/*.jpeg
+outputs/**/*.html
+outputs/**/*.json
+outputs/**/*.log
+
+# Logs
+*.log
+
+# Videos
+youtube_videos/
+thumbnails/
+prediction_logs/
+evaluation_logs/
+narration/
+
+# VSCode
+.vscode/
+
+# Cache
+.cache/
