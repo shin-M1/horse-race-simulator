@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: keiba-race-simulator
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run app.py --server.address 0.0.0.0 --server.port $PORT
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: RENDER
+        value: "true"

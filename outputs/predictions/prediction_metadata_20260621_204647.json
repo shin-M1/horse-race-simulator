@@ -1,0 +1,127 @@
+{
+  "timestamp": "20260621_204647",
+  "race_config": {
+    "course": "東京",
+    "surface": "芝",
+    "distance": 1800,
+    "direction": "左",
+    "weather": "晴",
+    "track_condition": "稍重",
+    "race_course_day": "6日目",
+    "course_layout": "D"
+  },
+  "horse_inputs": [
+    {
+      "horse_name": "マカナ",
+      "frame": 1,
+      "horse_number": 1,
+      "carried_weight": 50.0,
+      "pedigree_info": null
+    },
+    {
+      "horse_name": "ウイントワイライト",
+      "frame": 1,
+      "horse_number": 2,
+      "carried_weight": 53.0,
+      "pedigree_info": null
+    },
+    {
+      "horse_name": "ブラウンラチェット",
+      "frame": 2,
+      "horse_number": 3,
+      "carried_weight": 54.0,
+      "pedigree_info": null
+    },
+    {
+      "horse_name": "ミアネーロ",
+      "frame": 2,
+      "horse_number": 4,
+      "carried_weight": 55.0,
+      "pedigree_info": null
+    },
+    {
+      "horse_name": "エストゥペンダ",
+      "frame": 3,
+      "horse_number": 5,
+      "carried_weight": 54.0,
+      "pedigree_info": null
+    },
+    {
+      "horse_name": "ヴァルキリーバース",
+      "frame": 3,
+      "horse_number": 6,
+      "carried_weight": 55.5,
+      "pedigree_info": null
+    },
+    {
+      "horse_name": "セキトバイースト",
+      "frame": 4,
+      "horse_number": 7,
+      "carried_weight": 56.0,
+      "pedigree_info": null
+    },
+    {
+      "horse_name": "ニシノティアモ",
+      "frame": 4,
+      "horse_number": 8,
+      "carried_weight": 56.0,
+      "pedigree_info": null
+    },
+    {
+      "horse_name": "テリオスララ",
+      "frame": 5,
+      "horse_number": 9,
+      "carried_weight": 54.0,
+      "pedigree_info": null
+    },
+    {
+      "horse_name": "ホールネス",
+      "frame": 5,
+      "horse_number": 10,
+      "carried_weight": 55.0,
+      "pedigree_info": null
+    },
+    {
+      "horse_name": "テレサ",
+      "frame": 6,
+      "horse_number": 11,
+      "carried_weight": 55.0,
+      "pedigree_info": null
+    },
+    {
+      "horse_name": "コガネノソラ",
+      "frame": 6,
+      "horse_number": 12,
+      "carried_weight": 56.5,
+      "pedigree_info": null
+    },
+    {
+      "horse_name": "ビップデイジー",
+      "frame": 7,
+      "horse_number": 13,
+      "carried_weight": 54.0,
+      "pedigree_info": null
+    },
+    {
+      "horse_name": "パラディレーヌ",
+      "frame": 7,
+      "horse_number": 14,
+      "carried_weight": 56.0,
+      "pedigree_info": null
+    },
+    {
+      "horse_name": "ルージュソリテール",
+      "frame": 8,
+      "horse_number": 15,
+      "carried_weight": 55.0,
+      "pedigree_info": null
+    },
+    {
+      "horse_name": "セントメモリーズ",
+      "frame": 8,
+      "horse_number": 16,
+      "carried_weight": 52.0,
+      "pedigree_info": null
+    }
+  ]
+}

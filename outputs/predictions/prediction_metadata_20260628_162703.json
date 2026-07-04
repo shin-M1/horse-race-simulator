@@ -1,0 +1,115 @@
+{
+  "timestamp": "20260628_162703",
+  "race_config": {
+    "course": "福島",
+    "surface": "ダート",
+    "distance": 1700,
+    "direction": "右",
+    "weather": "晴",
+    "track_condition": "良",
+    "race_course_day": "2日目",
+    "course_layout": "A",
+    "track_bias": "標準"
+  },
+  "horse_inputs": [
+    {
+      "horse_name": "オリーブグリーン",
+      "frame": 1,
+      "horse_number": 1,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "松山",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "メイショウフウドウ",
+      "frame": 2,
+      "horse_number": 2,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "三浦",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "バギーウィップ",
+      "frame": 3,
+      "horse_number": 3,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "武藤",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "エクリプスルバン",
+      "frame": 4,
+      "horse_number": 4,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "戸崎圭",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ヴァナルガンド",
+      "frame": 5,
+      "horse_number": 5,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "津村",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "タイセイミッション",
+      "frame": 6,
+      "horse_number": 6,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "菊沢",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ラフエイジアン",
+      "frame": 6,
+      "horse_number": 7,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "ゴンサルベ",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "アイウィル",
+      "frame": 7,
+      "horse_number": 8,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "田口",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ドバイブルース",
+      "frame": 7,
+      "horse_number": 9,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "横山武",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ゴールドアローン",
+      "frame": 8,
+      "horse_number": 10,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "石川",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "クロースコンバット",
+      "frame": 8,
+      "horse_number": 11,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "北村宏",
+      "jockey_score": 50.0
+    }
+  ]
+}

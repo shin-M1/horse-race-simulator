@@ -1,0 +1,97 @@
+{
+  "timestamp": "20260626_111946",
+  "race_config": {
+    "course": "函館",
+    "surface": "芝",
+    "distance": 1200,
+    "direction": "右",
+    "weather": "晴",
+    "track_condition": "良",
+    "race_course_day": "5日目",
+    "course_layout": "A",
+    "track_bias": "標準"
+  },
+  "horse_inputs": [
+    {
+      "horse_name": "クワイエットアイ",
+      "frame": 1,
+      "horse_number": 1,
+      "carried_weight": 55.0,
+      "pedigree_info": null,
+      "jockey": "松本",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ブライアーヒル",
+      "frame": 2,
+      "horse_number": 2,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "横山琉",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ナオミライトニング",
+      "frame": 3,
+      "horse_number": 3,
+      "carried_weight": 53.0,
+      "pedigree_info": null,
+      "jockey": "北村友",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ララバニュルス",
+      "frame": 4,
+      "horse_number": 4,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "横山和",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "トップオンザヒル",
+      "frame": 5,
+      "horse_number": 5,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "小沢",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ファニーバニー",
+      "frame": 6,
+      "horse_number": 6,
+      "carried_weight": 53.0,
+      "pedigree_info": null,
+      "jockey": "鮫島駿",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ドリーミングアップ",
+      "frame": 7,
+      "horse_number": 7,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "横山武",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "シュークリーム",
+      "frame": 8,
+      "horse_number": 8,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "岩田望",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ナンナンプー",
+      "frame": 8,
+      "horse_number": 9,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "岩田康",
+      "jockey_score": 50.0
+    }
+  ]
+}

@@ -1,0 +1,151 @@
+{
+  "timestamp": "20260627_215732",
+  "race_config": {
+    "course": "函館",
+    "surface": "芝",
+    "distance": 2000,
+    "direction": "右",
+    "weather": "晴",
+    "track_condition": "稍重",
+    "race_course_day": "6日目",
+    "course_layout": "A",
+    "track_bias": "標準"
+  },
+  "horse_inputs": [
+    {
+      "horse_name": "バルナバ",
+      "frame": 1,
+      "horse_number": 1,
+      "carried_weight": 55.0,
+      "pedigree_info": null,
+      "jockey": "斎藤",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ファウストラーゼン",
+      "frame": 2,
+      "horse_number": 2,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "小林美",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ピースワンデュック",
+      "frame": 2,
+      "horse_number": 3,
+      "carried_weight": 55.0,
+      "pedigree_info": null,
+      "jockey": "佐々木",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "マジックサンズ",
+      "frame": 3,
+      "horse_number": 4,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "横山和",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "イガッチ",
+      "frame": 3,
+      "horse_number": 5,
+      "carried_weight": 55.0,
+      "pedigree_info": null,
+      "jockey": "浜中",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "サンストックトン",
+      "frame": 4,
+      "horse_number": 6,
+      "carried_weight": 54.0,
+      "pedigree_info": null,
+      "jockey": "松本",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "チャックネイト",
+      "frame": 4,
+      "horse_number": 7,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "鮫島駿",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ケイアイセナ",
+      "frame": 5,
+      "horse_number": 8,
+      "carried_weight": 57.5,
+      "pedigree_info": null,
+      "jockey": "武豊",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "オニャンコポン",
+      "frame": 5,
+      "horse_number": 9,
+      "carried_weight": 54.0,
+      "pedigree_info": null,
+      "jockey": "横山琉",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ケリフレッドアスク",
+      "frame": 6,
+      "horse_number": 10,
+      "carried_weight": 55.0,
+      "pedigree_info": null,
+      "jockey": "北村友",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ジュタ",
+      "frame": 6,
+      "horse_number": 11,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "坂井",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "エコロディノス",
+      "frame": 7,
+      "horse_number": 12,
+      "carried_weight": 57.0,
+      "pedigree_info": null,
+      "jockey": "池添",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "アラタ",
+      "frame": 7,
+      "horse_number": 13,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "大野",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "フィーリウス",
+      "frame": 8,
+      "horse_number": 14,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "丹内",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "デビットバローズ",
+      "frame": 8,
+      "horse_number": 15,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "岩田望",
+      "jockey_score": 50.0
+    }
+  ]
+}

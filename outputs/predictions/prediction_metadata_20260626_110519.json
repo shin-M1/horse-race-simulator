@@ -1,0 +1,151 @@
+{
+  "timestamp": "20260626_110519",
+  "race_config": {
+    "course": "函館",
+    "surface": "芝",
+    "distance": 1200,
+    "direction": "右",
+    "weather": "晴",
+    "track_condition": "良",
+    "race_course_day": "4日目",
+    "course_layout": "A",
+    "track_bias": "標準"
+  },
+  "horse_inputs": [
+    {
+      "horse_name": "トールキン",
+      "frame": 1,
+      "horse_number": 1,
+      "carried_weight": 54.0,
+      "pedigree_info": null,
+      "jockey": "鷲頭",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "メルトユアハート",
+      "frame": 2,
+      "horse_number": 2,
+      "carried_weight": 52.0,
+      "pedigree_info": null,
+      "jockey": "横山琉",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "エヴァンスウィート",
+      "frame": 2,
+      "horse_number": 3,
+      "carried_weight": 52.0,
+      "pedigree_info": null,
+      "jockey": "吉田隼",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "パクスロマーナ",
+      "frame": 3,
+      "horse_number": 4,
+      "carried_weight": 53.0,
+      "pedigree_info": null,
+      "jockey": "杉原",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "スティールブルー",
+      "frame": 3,
+      "horse_number": 5,
+      "carried_weight": 53.0,
+      "pedigree_info": null,
+      "jockey": "古川吉",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "シカゴスティング",
+      "frame": 4,
+      "horse_number": 6,
+      "carried_weight": 53.0,
+      "pedigree_info": null,
+      "jockey": "武豊",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ダークエクリプス",
+      "frame": 4,
+      "horse_number": 7,
+      "carried_weight": 54.0,
+      "pedigree_info": null,
+      "jockey": "荻野琢",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "サムハンター",
+      "frame": 5,
+      "horse_number": 8,
+      "carried_weight": 52.0,
+      "pedigree_info": null,
+      "jockey": "松本",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ルーフ",
+      "frame": 5,
+      "horse_number": 9,
+      "carried_weight": 53.0,
+      "pedigree_info": null,
+      "jockey": "佐々木",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "エコロジーク",
+      "frame": 6,
+      "horse_number": 10,
+      "carried_weight": 55.0,
+      "pedigree_info": null,
+      "jockey": "岩田康",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ヴェサリウス",
+      "frame": 6,
+      "horse_number": 11,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "横山武",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ドゥアムール",
+      "frame": 7,
+      "horse_number": 12,
+      "carried_weight": 53.0,
+      "pedigree_info": null,
+      "jockey": "斎藤",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "アシャカタカ",
+      "frame": 7,
+      "horse_number": 13,
+      "carried_weight": 54.0,
+      "pedigree_info": null,
+      "jockey": "小林美",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "アスティスプマンテ",
+      "frame": 8,
+      "horse_number": 14,
+      "carried_weight": 54.0,
+      "pedigree_info": null,
+      "jockey": "舟山",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ゴールドサーベル",
+      "frame": 8,
+      "horse_number": 15,
+      "carried_weight": 54.0,
+      "pedigree_info": null,
+      "jockey": "小沢",
+      "jockey_score": 50.0
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+"""Horse race simulation package."""

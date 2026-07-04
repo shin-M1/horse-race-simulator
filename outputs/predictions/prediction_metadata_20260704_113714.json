@@ -1,0 +1,106 @@
+{
+  "timestamp": "20260704_113714",
+  "race_config": {
+    "course": "福島",
+    "surface": "芝",
+    "distance": 2000,
+    "direction": "右",
+    "weather": "曇",
+    "track_condition": "稍重",
+    "race_course_day": "3日目",
+    "course_layout": "A",
+    "track_bias": "標準"
+  },
+  "horse_inputs": [
+    {
+      "horse_name": "ニシノイストワール",
+      "frame": 1,
+      "horse_number": 1,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "荻野極",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "メアヴィア",
+      "frame": 2,
+      "horse_number": 2,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "江田照",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "アレクレア",
+      "frame": 3,
+      "horse_number": 3,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "松岡",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "コスモアチーブ",
+      "frame": 4,
+      "horse_number": 4,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "石川",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ムーンストラック",
+      "frame": 5,
+      "horse_number": 5,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "菊沢",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "トレベルオール",
+      "frame": 6,
+      "horse_number": 6,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "大野",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ミッドセンチュリー",
+      "frame": 7,
+      "horse_number": 7,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "嶋田",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "マイネルボス",
+      "frame": 7,
+      "horse_number": 8,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "柴田大",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "アローメタル",
+      "frame": 8,
+      "horse_number": 9,
+      "carried_weight": 55.0,
+      "pedigree_info": null,
+      "jockey": "坂井",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "コスモエルヴァル",
+      "frame": 8,
+      "horse_number": 10,
+      "carried_weight": 55.0,
+      "pedigree_info": null,
+      "jockey": "津村",
+      "jockey_score": 50.0
+    }
+  ]
+}

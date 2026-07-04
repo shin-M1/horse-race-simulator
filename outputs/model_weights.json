@@ -1,0 +1,17 @@
+{
+  "weights": {
+    "horse_ability_score": 0.2182972182972183,
+    "race_strength_score": 0.2658692658692659,
+    "elo_score": 0.2683002683002683,
+    "late_kick_score": 0.022528022528022527,
+    "course_fit_score": 0.09197509197509197,
+    "pace_fit_score": 0.01910901910901911,
+    "jockey_score": 0.09460709460709461,
+    "track_bias_fit_score": 0.019314019314019316
+  },
+  "metric": "top3_hit_rate",
+  "score": 0.571429,
+  "baseline_score": 0.428571,
+  "training_rows": 424,
+  "race_count": 35
+}

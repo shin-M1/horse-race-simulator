@@ -1,0 +1,133 @@
+{
+  "timestamp": "20260627_212048",
+  "race_config": {
+    "course": "小倉",
+    "surface": "芝",
+    "distance": 1200,
+    "direction": "右",
+    "weather": "曇",
+    "track_condition": "稍重",
+    "race_course_day": "1日目",
+    "course_layout": "A",
+    "track_bias": "標準"
+  },
+  "horse_inputs": [
+    {
+      "horse_name": "ミキノバカラ",
+      "frame": 1,
+      "horse_number": 1,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "西塚",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ホーリーブラッサム",
+      "frame": 2,
+      "horse_number": 2,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "団野",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "メイショウミリオレ",
+      "frame": 3,
+      "horse_number": 3,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "菱田",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ジェニファー",
+      "frame": 4,
+      "horse_number": 4,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "松山",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "オオナミコナミ",
+      "frame": 4,
+      "horse_number": 5,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "西村淳",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ヤマニンレセディ",
+      "frame": 5,
+      "horse_number": 6,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "田山",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "スネーフリンガ",
+      "frame": 5,
+      "horse_number": 7,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "幸",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ロードトレゾール",
+      "frame": 6,
+      "horse_number": 8,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "吉村",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ブリーズオンチーク",
+      "frame": 6,
+      "horse_number": 9,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "藤懸",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ルージュサウダージ",
+      "frame": 7,
+      "horse_number": 10,
+      "carried_weight": 53.0,
+      "pedigree_info": null,
+      "jockey": "角田和",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "サディーク",
+      "frame": 7,
+      "horse_number": 11,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "松若",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "クォーツァイト",
+      "frame": 8,
+      "horse_number": 12,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "高杉",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "シュブロンレーヴル",
+      "frame": 8,
+      "horse_number": 13,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "秋山稔",
+      "jockey_score": 50.0
+    }
+  ]
+}

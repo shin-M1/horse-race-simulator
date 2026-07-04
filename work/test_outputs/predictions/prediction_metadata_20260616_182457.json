@@ -1,0 +1,30 @@
+{
+  "timestamp": "20260616_182457",
+  "race_config": {
+    "course": "阪神",
+    "surface": "芝",
+    "distance": 2200,
+    "direction": "右",
+    "weather": "晴",
+    "track_condition": "良",
+    "race_course_day": "1日目",
+    "course_layout": "A"
+  },
+  "horse_inputs": [
+    {
+      "horse_name": "Fast",
+      "frame": 1,
+      "horse_number": 1
+    },
+    {
+      "horse_name": "Late",
+      "frame": 4,
+      "horse_number": 2
+    },
+    {
+      "horse_name": "Stable",
+      "frame": 7,
+      "horse_number": 3
+    }
+  ]
+}

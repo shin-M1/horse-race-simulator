@@ -1,0 +1,124 @@
+{
+  "timestamp": "20260626_103444",
+  "race_config": {
+    "course": "函館",
+    "surface": "芝",
+    "distance": 2000,
+    "direction": "右",
+    "weather": "晴",
+    "track_condition": "良",
+    "race_course_day": "4日目",
+    "course_layout": "A",
+    "track_bias": "標準"
+  },
+  "horse_inputs": [
+    {
+      "horse_name": "ドマーネ",
+      "frame": 1,
+      "horse_number": 1,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "国分恭",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "タイムレスキス",
+      "frame": 2,
+      "horse_number": 2,
+      "carried_weight": 53.0,
+      "pedigree_info": null,
+      "jockey": "武豊",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "アルディスティーノ",
+      "frame": 3,
+      "horse_number": 3,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "横山琉",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "レダアトミカ",
+      "frame": 4,
+      "horse_number": 4,
+      "carried_weight": 53.0,
+      "pedigree_info": null,
+      "jockey": "舟山",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "メリザンド",
+      "frame": 5,
+      "horse_number": 5,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "杉原",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "クリスレジーナ",
+      "frame": 5,
+      "horse_number": 6,
+      "carried_weight": 53.0,
+      "pedigree_info": null,
+      "jockey": "斎藤",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "アストリル",
+      "frame": 6,
+      "horse_number": 7,
+      "carried_weight": 53.0,
+      "pedigree_info": null,
+      "jockey": "丹内",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "リリーズブルーム",
+      "frame": 6,
+      "horse_number": 8,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "原田和",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "モルビド",
+      "frame": 7,
+      "horse_number": 9,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "小沢",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ソングオブザバード",
+      "frame": 7,
+      "horse_number": 10,
+      "carried_weight": 53.0,
+      "pedigree_info": null,
+      "jockey": "横山武",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ルージュカエラ",
+      "frame": 8,
+      "horse_number": 11,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "吉田隼",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "エイカイコバチ",
+      "frame": 8,
+      "horse_number": 12,
+      "carried_weight": 53.0,
+      "pedigree_info": null,
+      "jockey": "佐々木",
+      "jockey_score": 50.0
+    }
+  ]
+}

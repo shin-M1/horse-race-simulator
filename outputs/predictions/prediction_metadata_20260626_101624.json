@@ -1,0 +1,79 @@
+{
+  "timestamp": "20260626_101624",
+  "race_config": {
+    "course": "阪神",
+    "surface": "芝",
+    "distance": 2000,
+    "direction": "右",
+    "weather": "晴",
+    "track_condition": "稍重",
+    "race_course_day": "6日目",
+    "course_layout": "B",
+    "track_bias": "標準"
+  },
+  "horse_inputs": [
+    {
+      "horse_name": "ステラクラウン",
+      "frame": 1,
+      "horse_number": 1,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "岩田望",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ロードガレリア",
+      "frame": 2,
+      "horse_number": 2,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "高杉",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ダノンカゼルタ",
+      "frame": 3,
+      "horse_number": 3,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "Ｍデムーロ",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ミカエルパシャ",
+      "frame": 4,
+      "horse_number": 4,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "北村友",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "カリーニョ",
+      "frame": 5,
+      "horse_number": 5,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "坂井",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ラーテル",
+      "frame": 6,
+      "horse_number": 6,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "城戸",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "エコテーラー",
+      "frame": 7,
+      "horse_number": 7,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "藤懸",
+      "jockey_score": 50.0
+    }
+  ]
+}

@@ -1,0 +1,115 @@
+{
+  "timestamp": "20260628_165615",
+  "race_config": {
+    "course": "函館",
+    "surface": "ダート",
+    "distance": 1700,
+    "direction": "右",
+    "weather": "晴",
+    "track_condition": "稍重",
+    "race_course_day": "6日目",
+    "course_layout": "A",
+    "track_bias": "標準"
+  },
+  "horse_inputs": [
+    {
+      "horse_name": "プリンセッサ",
+      "frame": 1,
+      "horse_number": 1,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "岩田望",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "コパノエビータ",
+      "frame": 2,
+      "horse_number": 2,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "長浜",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ネクストダンサー",
+      "frame": 3,
+      "horse_number": 3,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "黛",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "コンティオ",
+      "frame": 4,
+      "horse_number": 4,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "横山和",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ブラックルビー",
+      "frame": 5,
+      "horse_number": 5,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "北村友",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ユージュアーナ",
+      "frame": 6,
+      "horse_number": 6,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "武豊",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ルージュマローネ",
+      "frame": 6,
+      "horse_number": 7,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "佐々木",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ニシノラヴァンダ",
+      "frame": 7,
+      "horse_number": 8,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "横山琉",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "タマモカンパネラ",
+      "frame": 7,
+      "horse_number": 9,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "原",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ウインシャーガス",
+      "frame": 8,
+      "horse_number": 10,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "鮫島駿",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ドーンコーラス",
+      "frame": 8,
+      "horse_number": 11,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "丹内",
+      "jockey_score": 50.0
+    }
+  ]
+}

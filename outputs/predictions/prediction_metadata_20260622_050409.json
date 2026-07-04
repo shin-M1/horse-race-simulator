@@ -1,0 +1,160 @@
+{
+  "timestamp": "20260622_050409",
+  "race_config": {
+    "course": "東京",
+    "surface": "芝",
+    "distance": 1800,
+    "direction": "左",
+    "weather": "曇",
+    "track_condition": "稍重",
+    "race_course_day": "6日目",
+    "course_layout": "D",
+    "track_bias": "前残り"
+  },
+  "horse_inputs": [
+    {
+      "horse_name": "マカナ",
+      "frame": 1,
+      "horse_number": 1,
+      "carried_weight": 50.0,
+      "pedigree_info": null,
+      "jockey": "松岡",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ウイントワイライト",
+      "frame": 1,
+      "horse_number": 2,
+      "carried_weight": 53.0,
+      "pedigree_info": null,
+      "jockey": "横山典",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ブラウンラチェット",
+      "frame": 2,
+      "horse_number": 3,
+      "carried_weight": 54.0,
+      "pedigree_info": null,
+      "jockey": "丸山",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ミアネーロ",
+      "frame": 2,
+      "horse_number": 4,
+      "carried_weight": 55.0,
+      "pedigree_info": null,
+      "jockey": "大野",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "エストゥペンダ",
+      "frame": 3,
+      "horse_number": 5,
+      "carried_weight": 54.0,
+      "pedigree_info": null,
+      "jockey": "荻野極",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ヴァルキリーバース",
+      "frame": 3,
+      "horse_number": 6,
+      "carried_weight": 55.5,
+      "pedigree_info": null,
+      "jockey": "ルメール",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "セキトバイースト",
+      "frame": 4,
+      "horse_number": 7,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "浜中",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ニシノティアモ",
+      "frame": 4,
+      "horse_number": 8,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "津村",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "テリオスララ",
+      "frame": 5,
+      "horse_number": 9,
+      "carried_weight": 54.0,
+      "pedigree_info": null,
+      "jockey": "ゴンサルベ",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ホールネス",
+      "frame": 5,
+      "horse_number": 10,
+      "carried_weight": 55.0,
+      "pedigree_info": null,
+      "jockey": "三浦",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "テレサ",
+      "frame": 6,
+      "horse_number": 11,
+      "carried_weight": 55.0,
+      "pedigree_info": null,
+      "jockey": "戸崎圭",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "コガネノソラ",
+      "frame": 6,
+      "horse_number": 12,
+      "carried_weight": 56.5,
+      "pedigree_info": null,
+      "jockey": "菊沢",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ビップデイジー",
+      "frame": 7,
+      "horse_number": 13,
+      "carried_weight": 54.0,
+      "pedigree_info": null,
+      "jockey": "西村淳",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "パラディレーヌ",
+      "frame": 7,
+      "horse_number": 14,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "原",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ルージュソリテール",
+      "frame": 8,
+      "horse_number": 15,
+      "carried_weight": 55.0,
+      "pedigree_info": null,
+      "jockey": "西塚",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "セントメモリーズ",
+      "frame": 8,
+      "horse_number": 16,
+      "carried_weight": 52.0,
+      "pedigree_info": null,
+      "jockey": "木幡巧",
+      "jockey_score": 50.0
+    }
+  ]
+}

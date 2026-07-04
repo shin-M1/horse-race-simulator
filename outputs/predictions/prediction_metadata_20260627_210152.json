@@ -1,0 +1,88 @@
+{
+  "timestamp": "20260627_210152",
+  "race_config": {
+    "course": "小倉",
+    "surface": "芝",
+    "distance": 2000,
+    "direction": "右",
+    "weather": "曇",
+    "track_condition": "稍重",
+    "race_course_day": "1日目",
+    "course_layout": "A",
+    "track_bias": "標準"
+  },
+  "horse_inputs": [
+    {
+      "horse_name": "ダノンアトラス",
+      "frame": 1,
+      "horse_number": 1,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "Ｍデムーロ",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ノンブルドール",
+      "frame": 2,
+      "horse_number": 2,
+      "carried_weight": 55.0,
+      "pedigree_info": null,
+      "jockey": "西村淳",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "デルシエロ",
+      "frame": 3,
+      "horse_number": 3,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "吉村",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "サヴォアフェール",
+      "frame": 4,
+      "horse_number": 4,
+      "carried_weight": 55.0,
+      "pedigree_info": null,
+      "jockey": "松山",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ウィテカービート",
+      "frame": 5,
+      "horse_number": 5,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "秋山稔",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "パイオニアスクエア",
+      "frame": 6,
+      "horse_number": 6,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "富田",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ゼンノインヴォーク",
+      "frame": 7,
+      "horse_number": 7,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "高杉",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "サンライズグラシア",
+      "frame": 8,
+      "horse_number": 8,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "田山",
+      "jockey_score": 50.0
+    }
+  ]
+}

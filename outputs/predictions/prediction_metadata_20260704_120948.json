@@ -1,0 +1,106 @@
+{
+  "timestamp": "20260704_120948",
+  "race_config": {
+    "course": "福島",
+    "surface": "ダート",
+    "distance": 1150,
+    "direction": "右",
+    "weather": "曇",
+    "track_condition": "重",
+    "race_course_day": "3日目",
+    "course_layout": "A",
+    "track_bias": "標準"
+  },
+  "horse_inputs": [
+    {
+      "horse_name": "ボディブロー",
+      "frame": 1,
+      "horse_number": 1,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "荻野極",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ゲキザル",
+      "frame": 2,
+      "horse_number": 2,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "原",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ラストシャリナ",
+      "frame": 3,
+      "horse_number": 3,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "石川",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "メイショウコバト",
+      "frame": 4,
+      "horse_number": 4,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "石橋脩",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ピックアップライン",
+      "frame": 5,
+      "horse_number": 5,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "木幡巧",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "アイアムユウシュン",
+      "frame": 6,
+      "horse_number": 6,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "小崎",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "テセラリアン",
+      "frame": 7,
+      "horse_number": 7,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "菊沢",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "イリフィ",
+      "frame": 7,
+      "horse_number": 8,
+      "carried_weight": 56.0,
+      "pedigree_info": null,
+      "jockey": "坂井",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "ゲイルライダー",
+      "frame": 8,
+      "horse_number": 9,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "戸崎圭",
+      "jockey_score": 50.0
+    },
+    {
+      "horse_name": "カネショウレジェン",
+      "frame": 8,
+      "horse_number": 10,
+      "carried_weight": 58.0,
+      "pedigree_info": null,
+      "jockey": "大野",
+      "jockey_score": 50.0
+    }
+  ]
+}
