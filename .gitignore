@@ -1,11 +1,14 @@
 # Python
-__pycache__/
+_pycache__/
+**/__pycache__/
 *.pyc
+*.py[cod]
 
 # Streamlit
 .streamlit/secrets.toml
 
 # Outputs
+outputs/
 outputs/**/*.csv
 outputs/**/*.gif
 outputs/**/*.mp4
@@ -15,6 +18,14 @@ outputs/**/*.jpeg
 outputs/**/*.html
 outputs/**/*.json
 outputs/**/*.log
+
+# Local data caches
+data/horse_database/*.json
+data/race_database/*.json
+data/trend_database/*.json
+data/elo/*.json
+data/model/*.json
+data/model/*.pkl
 
 # Logs
 *.log
@@ -31,3 +42,6 @@ narration/
 
 # Cache
 .cache/
+
+# Test outputs
+work/test_outputs/

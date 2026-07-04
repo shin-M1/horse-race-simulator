@@ -92,6 +92,7 @@ def run_monte_carlo_prediction(
     top3_model_path: str | Path = TOP3_MODEL_PATH,
     win_model_path: str | Path = WIN_MODEL_PATH,
     trend_analysis: dict[str, Any] | None = None,
+    store_trial_timelines: bool = True,
 ) -> dict[str, Any]:
     """Run repeated race simulations and aggregate finish-position probabilities."""
     raw_race_config = race_config
@@ -140,7 +141,7 @@ def run_monte_carlo_prediction(
                 "seed": trial_seed,
                 "pace": trial_pace.pace,
                 "ranking": result.ranking.copy(),
-                "race_timeline": result.race_timeline,
+                "race_timeline": result.race_timeline if store_trial_timelines else [],
                 "result_df": result_df,
             }
         )
@@ -411,8 +412,8 @@ def _build_prediction_table(
             + course_fit_score * 0.10
             + pace_fit_score * 0.10
             + ability.jockey_score * 0.05
-            + track_bias_fit_score * 0.05
-            + race_trend_score * 0.10
+            + track_bias_fit_score * 0.03
+            + race_trend_score * 0.02
         )
         raw_prediction_score = max(0.0, min(100.0, final_prediction_score * 0.70 + monte_carlo_score * 0.30))
         stability = max(0.0, 1.0 - float(finishes.std(ddof=0)) / max(1.0, horse_count - 1))

@@ -4,6 +4,7 @@ import importlib
 import math
 import os
 import sys
+import time
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -50,6 +51,10 @@ for module_name in [
     "metrics",
     "log_manager",
     "evaluation",
+    "horse_database",
+    "race_database",
+    "trend_database",
+    "elo_rating",
 ]:
     if module_name in sys.modules:
         importlib.reload(sys.modules[module_name])
@@ -77,6 +82,7 @@ from evaluation import (
     save_prediction_log,
     summarize_evaluations,
 )
+from elo_rating import load_elo_ratings, save_elo_ratings, update_elo_from_race_result
 from log_manager import (
     DuplicateLogError,
     delete_log_files,
@@ -103,9 +109,15 @@ from ml_model import (
 )
 from monte_carlo import run_monte_carlo_prediction
 from race_data_fetcher import load_prediction_race_data
+from race_database import get_or_fetch_race_data
 from race_trend_analyzer import analyze_same_race_trends
-from race_trend_database import analyze_same_race_trend_database, build_same_race_trend_database
+from race_trend_database import (
+    analyze_same_race_trend_database,
+    build_same_race_trend_database,
+    load_same_race_trend_database,
+)
 from race_trend_fetcher import fetch_same_race_history, save_same_race_history
+from trend_database import get_or_build_trend_data, load_trend_cache
 from report_generator import generate_prediction_report, save_prediction_report
 from result_fetcher import load_completed_race_result
 from result_formatter import (
@@ -140,15 +152,93 @@ run_race_simulation = simulation_main.run_race_simulation
 st.set_page_config(page_title="競馬レースシミュレーター", layout="wide")
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def cached_prediction_race_data(race_name: str, race_date: str) -> dict[str, Any] | None:
+@st.cache_data(ttl=86400, max_entries=20, show_spinner=False)
+def cached_prediction_race_data(
+    race_name: str,
+    race_date: str,
+    use_local_database: bool = True,
+    force_refresh_data: bool = False,
+) -> dict[str, Any] | None:
     # Pre-race loading deliberately has no dependency on fetch_race_result.
-    return load_prediction_race_data(race_name, race_date)
+    if use_local_database:
+        return get_or_fetch_race_data(
+            race_name=race_name,
+            race_date=race_date,
+            race_id=None,
+            fetcher_func=lambda: load_prediction_race_data(race_name, race_date),
+            force_refresh=force_refresh_data,
+        )
+    fetched = load_prediction_race_data(race_name, race_date)
+    if isinstance(fetched, dict):
+        fetched["_database_status"] = "disabled"
+    return fetched
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=86400, max_entries=20, show_spinner=False)
 def cached_completed_race_result(race_name: str, race_date: str) -> dict[str, Any] | None:
     return load_completed_race_result(race_name, race_date)
+
+
+@st.cache_data(ttl=86400, max_entries=20, show_spinner=False)
+def cached_same_race_trend_database(race_name: str, venue: str, distance: int) -> dict[str, Any] | None:
+    return load_trend_cache(race_name, venue, distance) or load_same_race_trend_database(race_name, venue, distance)
+
+
+def is_streamlit_cloud() -> bool:
+    return os.environ.get("STREAMLIT_RUNTIME_ENV") is not None or os.environ.get("HOSTNAME", "").startswith("streamlit")
+
+
+def execution_mode_settings(execution_mode: str) -> dict[str, Any]:
+    if execution_mode == "軽量モード":
+        return {
+            "monte_carlo_runs": 50,
+            "video_duration_sec": 15,
+            "video_width": 854,
+            "video_height": 480,
+            "video_fps": 12,
+            "enable_youtube_video": False,
+            "enable_narration": False,
+            "enable_bgm": False,
+            "use_cached_trends_only": True,
+            "store_trial_timelines": False,
+            "save_timeline_csv": False,
+        }
+    if execution_mode == "通常モード":
+        return {
+            "monte_carlo_runs": 300,
+            "video_duration_sec": 30,
+            "video_width": 1280,
+            "video_height": 720,
+            "video_fps": 24,
+            "enable_youtube_video": True,
+            "enable_narration": True,
+            "enable_bgm": True,
+            "use_cached_trends_only": True,
+            "store_trial_timelines": True,
+            "save_timeline_csv": True,
+        }
+    return {
+        "monte_carlo_runs": 500,
+        "video_duration_sec": 60,
+        "video_width": 1920,
+        "video_height": 1080,
+        "video_fps": 30,
+        "enable_youtube_video": True,
+        "enable_narration": True,
+        "enable_bgm": True,
+        "use_cached_trends_only": False,
+        "store_trial_timelines": True,
+        "save_timeline_csv": True,
+    }
+
+
+def current_memory_usage_mb() -> float | None:
+    try:
+        import psutil  # type: ignore
+
+        return psutil.Process(os.getpid()).memory_info().rss / (1024 * 1024)
+    except Exception:
+        return None
 
 
 def main() -> None:
@@ -168,6 +258,22 @@ def main() -> None:
 def render_prediction_tab() -> None:
     st.write("レース条件と出走馬を入力すると、近走分析、展開予測、シミュレーション、動画生成まで実行します。")
 
+    st.sidebar.header("実行設定")
+    cloud_environment = is_streamlit_cloud()
+    execution_mode = st.sidebar.selectbox(
+        "実行モード",
+        ["軽量モード", "通常モード", "高品質動画モード"],
+        index=0,
+    )
+    mode_settings = execution_mode_settings(execution_mode)
+    lightweight_mode = execution_mode == "軽量モード"
+    use_local_database = st.sidebar.checkbox("保存済みDBを優先する", value=True)
+    force_refresh_data = st.sidebar.checkbox("データを再取得する", value=False)
+    st.session_state["execution_mode"] = execution_mode
+    st.session_state["execution_mode_settings"] = mode_settings
+    if cloud_environment and execution_mode == "高品質動画モード":
+        st.warning("高品質動画モードはStreamlit Cloudでは重すぎるため、ローカル実行を推奨します。")
+
     lookup_col, date_col, fetch_col = st.columns([2, 1, 1])
     with lookup_col:
         race_name_input = st.text_input("レース名", key="prediction_race_name")
@@ -179,7 +285,14 @@ def render_prediction_tab() -> None:
 
     if fetch_entries:
         try:
-            fetched = cached_prediction_race_data(race_name_input.strip(), race_date_input.isoformat())
+            if force_refresh_data:
+                cached_prediction_race_data.clear()
+            fetched = cached_prediction_race_data(
+                race_name_input.strip(),
+                race_date_input.isoformat(),
+                use_local_database=use_local_database,
+                force_refresh_data=force_refresh_data,
+            )
             if fetched is None:
                 st.error("レースを特定できませんでした。レース名と開催日を確認してください。")
             elif not fetched.get("fetched_entries"):
@@ -217,8 +330,11 @@ def render_prediction_tab() -> None:
     if isinstance(prediction_race_data, dict) and prediction_race_data:
         st.caption(
             f"race_id: {prediction_race_data.get('race_id', '-')} / "
-            f"取得元: {prediction_race_data.get('source_url', '-')}"
+            f"取得元: {prediction_race_data.get('source_url', '-')} / "
+            f"race_database: {prediction_race_data.get('_database_status', 'disabled')}"
         )
+        if debug_mode:
+            st.code(str(prediction_race_data.get("_database_path", "-")), language="text")
         if fetched_entries_data:
             st.dataframe(pd.DataFrame(fetched_entries_data), width="stretch", hide_index=True)
 
@@ -228,16 +344,6 @@ def render_prediction_tab() -> None:
         race_config["race_date"] = race_date_input.isoformat()
 
     st.sidebar.header("出走設定")
-    cloud_environment = bool(
-        os.getenv("STREAMLIT_SHARING_MODE")
-        or os.getenv("STREAMLIT_CLOUD")
-        or os.getenv("RENDER")
-    )
-    lightweight_mode = st.sidebar.checkbox(
-        "軽量モード",
-        value=cloud_environment,
-        help="公開環境向けにMP4生成を避け、Plotly表示と短い計算設定を使います。",
-    )
     animation_method = st.sidebar.radio("アニメーション形式", ["3D風", "簡易2D", "投稿用MP4"], index=0)
     timeline_mode = st.sidebar.selectbox("タイムライン生成方式", ["controlled", "legacy"], index=0)
     video_layout = st.sidebar.selectbox("動画レイアウト", ["side_scroll", "legacy_overview"], index=0)
@@ -264,7 +370,9 @@ def render_prediction_tab() -> None:
     current_weights = load_model_weights()
     with st.sidebar.expander("使用中の予想重み"):
         st.json(current_weights)
-    n_simulations = st.sidebar.selectbox("シミュレーション回数", [100, 300, 500, 1000], index=2, disabled=not prediction_mode)
+    n_simulations = st.sidebar.selectbox("シミュレーション回数", [100, 300, 500, 1000], index=2, disabled=not prediction_mode or lightweight_mode)
+    if lightweight_mode and prediction_mode:
+        st.sidebar.caption(f"軽量モードではMonte Carlo回数を{mode_settings['monte_carlo_runs']}回に制限します。")
     prediction_seed = st.sidebar.number_input("乱数seed", min_value=0, max_value=2_147_483_647, value=42, step=1, disabled=not prediction_mode)
     prediction_sort = st.sidebar.selectbox("結果の並び替え", ["prediction_score", "win_rate", "top3_rate", "avg_finish"], index=0, disabled=not prediction_mode)
 
@@ -283,7 +391,10 @@ def render_prediction_tab() -> None:
     if debug_mode and isinstance(prediction_race_data, dict) and prediction_race_data:
         render_netkeiba_debug(prediction_race_data.get("debug", {}), "予想用データ取得デバッグ")
     render_duration_sec = int(animation_seconds)
-    effective_duration_sec = min(render_duration_sec, 30) if lightweight_mode else render_duration_sec
+    effective_duration_sec = int(mode_settings["video_duration_sec"]) if lightweight_mode else min(render_duration_sec, int(mode_settings["video_duration_sec"]))
+    effective_video_fps = int(mode_settings["video_fps"])
+    effective_video_width = int(mode_settings["video_width"])
+    effective_video_height = int(mode_settings["video_height"])
     effective_animation_method = "3D風" if lightweight_mode else animation_method
 
     prediction_duplicate_action = st.selectbox(
@@ -292,8 +403,47 @@ def render_prediction_tab() -> None:
         index=0,
         key="prediction_duplicate_action",
     )
-    submitted = st.button("シミュレーション実行", type="primary", width="stretch")
+    trend_name_for_button = str(race_config.get("race_name") or race_name_input.strip())
+    trend_venue_for_button = str(race_config.get("course") or "")
+    try:
+        trend_distance_for_button = int(race_config.get("distance") or 0)
+    except (TypeError, ValueError):
+        trend_distance_for_button = 0
+    create_trends = st.button(
+        "過去10年傾向データを作成",
+        key="create_same_race_trend_database_button",
+        disabled=lightweight_mode,
+        help="軽量モードでは無効です。ローカルの通常モード以上で事前作成してください。",
+    )
+    if create_trends:
+        if not trend_name_for_button or not trend_venue_for_button or trend_distance_for_button <= 0:
+            st.warning("過去10年傾向データの作成には、レース名・競馬場・距離が必要です。")
+        else:
+            try:
+                with st.spinner("過去10年傾向データを作成中です..."):
+                    trend_database = get_or_build_trend_data(
+                        trend_name_for_button,
+                        trend_venue_for_button,
+                        trend_distance_for_button,
+                        builder_func=lambda: build_same_race_trend_database(
+                            race_name=trend_name_for_button,
+                            venue=trend_venue_for_button,
+                            distance=trend_distance_for_button,
+                            years=10,
+                            race_date=str(race_config.get("race_date") or race_date_input.isoformat()),
+                        ),
+                        force_refresh=True,
+                    )
+                cached_same_race_trend_database.clear()
+                st.success(f"過去傾向DBを作成しました: {(trend_database or {}).get('row_count', 0)}行")
+            except Exception as exc:
+                st.error("過去傾向データの作成に失敗しました。軽量モードではなくローカル環境で再実行してください。")
+                if debug_mode:
+                    st.exception(exc)
+
+    submitted = st.button("予想実行", type="primary", width="stretch")
     if submitted:
+        started_at = time.perf_counter()
         validation = validate_inputs(race_config, horses)
         if not validation.is_valid:
             for error in validation.errors:
@@ -302,22 +452,28 @@ def render_prediction_tab() -> None:
 
         st.session_state.pop("simulation_result", None)
         try:
-            with st.spinner("直近5走取得、分析、シミュレーション、動画生成を実行中です..."):
+            with st.spinner("直近5走取得、分析、予想を実行中です..."):
                 result = run_race_simulation(
                     race_config=race_config,
                     horses=horses,
                     output_dir=str(OUTPUT_DIR),
                     provider_module=provider_module.strip() or None,
                     provider_factory=provider_factory.strip() or None,
-                    make_gif=effective_animation_method == "簡易2D",
+                    make_gif=False,
                     make_mp4=False,
-                    animation_mode=animation_mode_key(effective_animation_method),
+                    animation_mode="none",
                     animation_seconds=float(effective_duration_sec),
                     video_format=video_format_label,
                     timeline_mode=timeline_mode,
                     seed=42,
+                    make_animation=False,
+                    save_timeline_csv=bool(mode_settings["save_timeline_csv"]),
+                    use_local_database=use_local_database,
+                    force_refresh_data=force_refresh_data,
                 )
             ensure_recent_races_exist(result)
+            effective_monte_carlo_runs = 0
+            trend_data_used = False
             if prediction_mode:
                 trend_analysis = None
                 trend_name = str(race_config.get("race_name") or race_name_input.strip())
@@ -327,33 +483,27 @@ def render_prediction_tab() -> None:
                 except (TypeError, ValueError):
                     trend_distance = 0
                 if trend_name and trend_venue and trend_distance > 0:
-                    with st.spinner("同レース過去10年傾向を取得・集計中です..."):
-                        try:
-                            trend_database = build_same_race_trend_database(
-                                race_name=trend_name,
-                                venue=trend_venue,
-                                distance=trend_distance,
-                                years=10,
-                                race_date=str(race_config.get("race_date") or race_date_input.isoformat()),
-                            )
-                            trend_analysis = analyze_same_race_trend_database(trend_database)
-                            result["same_race_trend_database"] = trend_database
-                            result["same_race_trend_analysis"] = trend_analysis
-                            result.setdefault("log", []).append(
-                                f"same race trend rows={trend_database.get('row_count', 0)}"
-                            )
-                        except Exception as exc:
-                            result.setdefault("log", []).append(f"same race trend fetch skipped: {exc}")
-                            if debug_mode:
-                                st.warning(f"同レース過去10年傾向は取得できませんでした。中立スコアで続行します: {exc}")
+                    trend_database = cached_same_race_trend_database(trend_name, trend_venue, trend_distance)
+                    if isinstance(trend_database, dict):
+                        trend_analysis = analyze_same_race_trend_database(trend_database)
+                        trend_data_used = True
+                        result["same_race_trend_database"] = trend_database
+                        result["same_race_trend_analysis"] = trend_analysis
+                        result.setdefault("log", []).append(
+                            f"cached same race trend rows={trend_database.get('row_count', 0)}"
+                        )
+                    else:
+                        st.info("過去傾向データが未作成のため、今回は中立評価で予想します。必要な場合はローカル環境で傾向データを作成してください。")
+                        result.setdefault("log", []).append("same race trend cache missing: neutral trend score")
                 race_config_for_prediction = dict(race_config)
                 if isinstance(trend_analysis, dict):
                     race_config_for_prediction["same_race_trend_analysis"] = trend_analysis
+                effective_monte_carlo_runs = min(int(n_simulations), int(mode_settings["monte_carlo_runs"]))
                 with st.spinner("Monte Carlo予想を実行中です..."):
                     result["prediction"] = run_monte_carlo_prediction(
                         race_config=race_config_for_prediction,
                         horses=horses,
-                        n_simulations=min(int(n_simulations), 100) if lightweight_mode else int(n_simulations),
+                        n_simulations=effective_monte_carlo_runs,
                         seed=int(prediction_seed),
                         abilities=result.get("abilities"),
                         pace=result.get("pace"),
@@ -361,6 +511,7 @@ def render_prediction_tab() -> None:
                         prediction_engine=active_prediction_engine,
                         prediction_weights=current_weights,
                         trend_analysis=trend_analysis,
+                        store_trial_timelines=bool(mode_settings["store_trial_timelines"]),
                     )
                 _merge_prediction_trend_columns(result)
                 result["prediction_engine_requested"] = prediction_engine_requested
@@ -368,7 +519,9 @@ def render_prediction_tab() -> None:
                 representative_trial = result["prediction"].get("representative_trial", {})
                 if representative_trial:
                     result["representative_trial"] = representative_trial
-                    result["race_timeline"] = representative_trial.get("race_timeline", result.get("race_timeline", []))
+                    trial_timeline = representative_trial.get("race_timeline")
+                    if isinstance(trial_timeline, list) and trial_timeline:
+                        result["race_timeline"] = trial_timeline
                     result["single_result"] = representative_trial.get("result_df")
                     result["single_result_source"] = "Monte Carlo trial with highest AI expected value"
             if not isinstance(result.get("single_result"), pd.DataFrame):
@@ -380,18 +533,23 @@ def render_prediction_tab() -> None:
             result["prediction_result"] = result.get("prediction")
             result["controlled_timeline"] = result.get("race_timeline", [])
             result["lightweight_mode"] = lightweight_mode
+            result["execution_mode"] = execution_mode
+            result["use_local_database"] = use_local_database
+            result["force_refresh_data"] = force_refresh_data
+            result["monte_carlo_runs"] = effective_monte_carlo_runs
+            result["video_generation_on_prediction"] = False
+            result["trend_data_used"] = trend_data_used
+            result["skip_timeline_log"] = lightweight_mode
+            result["video_duration_sec"] = effective_duration_sec
+            result["video_fps"] = effective_video_fps
+            result["video_width"] = effective_video_width
+            result["video_height"] = effective_video_height
+            result["video_layout"] = video_layout
+            result["video_format"] = video_format_label
+            result["processing_time_sec"] = time.perf_counter() - started_at
+            result["memory_usage_mb"] = current_memory_usage_mb()
             if lightweight_mode:
-                result.setdefault("log", []).append("軽量モード: MP4生成を省略し、Plotly HTMLを使用しました。")
-            else:
-                with st.spinner("レース動画を生成中です..."):
-                    render_video_for_result(
-                        result=result,
-                        race_config=race_config,
-                        horses=result.get("horse_inputs", horses),
-                        video_format_label=video_format_label,
-                        video_layout=video_layout,
-                        duration_sec=render_duration_sec,
-                    )
+                result.setdefault("log", []).append("軽量モード: 予想実行時の動画生成・過去10年新規取得・音声/BGM生成を省略しました。")
             log_metadata = dict(race_config)
             if isinstance(metadata_defaults, dict):
                 log_metadata.update({key: value for key, value in metadata_defaults.items() if value not in (None, "", 0)})
@@ -452,7 +610,7 @@ def render_prediction_tab() -> None:
             st.error(str(exc))
             st.stop()
         except Exception as exc:
-            st.error("シミュレーション中にエラーが発生しました。")
+            st.error("処理中にエラーが発生しました。軽量モードで再実行してください。")
             st.exception(exc)
             st.stop()
 
@@ -463,7 +621,7 @@ def render_prediction_tab() -> None:
         if result.get("prediction_log_path"):
             st.caption(f"予想ログ: {result['prediction_log_path']}")
     else:
-        st.info("入力後に「シミュレーション実行」を押してください。")
+        st.info("入力後に「予想実行」を押してください。")
 
 
 def render_actual_result_tab() -> None:
@@ -726,6 +884,7 @@ def render_performance_tab() -> None:
 
     render_failure_analysis(logs)
     render_log_management()
+    render_elo_update_section(logs)
 
     st.divider()
     st.subheader("予想重み最適化")
@@ -740,7 +899,7 @@ def render_performance_tab() -> None:
     with optimizer_col1:
         optimization_metric = st.selectbox(
             "最適化指標",
-            ["top3_hit_rate", "winner_hit_rate", "brier_score", "log_loss"],
+            ["top3_hit_rate", "winner_hit_rate", "mean_rank_error", "brier_score", "log_loss"],
             key="optimization_metric",
         )
     with optimizer_col2:
@@ -870,6 +1029,12 @@ def render_prediction_report_section(result: dict[str, Any]) -> None:
 
 def render_youtube_output_tab() -> None:
     st.write("AI予想結果から、YouTube投稿に使いやすいサムネイルと構成動画を生成します。")
+    execution_mode = str(st.session_state.get("execution_mode", "軽量モード"))
+    if execution_mode == "軽量モード":
+        st.warning("軽量モードではYouTube動画生成・AI読み上げ・BGM合成を無効化しています。ローカル環境で通常モード以上を選択してください。")
+        return
+    if is_streamlit_cloud() and execution_mode == "高品質動画モード":
+        st.warning("高品質動画モードはStreamlit Cloudでは重すぎるため、ローカル実行を推奨します。")
     prediction_log = _select_youtube_prediction_log()
     if not prediction_log:
         st.info("まず予想タブでシミュレーションを実行するか、予想ログを保存してください。")
@@ -1140,6 +1305,58 @@ def render_failure_analysis(logs: list[dict[str, Any]]) -> None:
         st.info(str(suggestion))
 
 
+def render_elo_update_section(logs: list[dict[str, Any]]) -> None:
+    st.divider()
+    st.subheader("Eloレーティング")
+    ratings = load_elo_ratings()
+    st.caption(f"保存済みElo: {len(ratings)}頭")
+    if ratings:
+        ranking = sorted(ratings.items(), key=lambda item: item[1], reverse=True)[:20]
+        st.dataframe(
+            pd.DataFrame(
+                [{"horse_name": name, "elo_rating": round(float(value), 2)} for name, value in ranking]
+            ),
+            width="stretch",
+            hide_index=True,
+        )
+    if st.button("評価ログからEloを更新", key="update_elo_from_evaluation_logs"):
+        updated = dict(ratings)
+        updated_races = 0
+        for log in logs:
+            race_result = _race_result_for_elo(log)
+            if len(race_result) < 2:
+                continue
+            updated = update_elo_from_race_result(race_result, updated)
+            updated_races += 1
+        if updated_races <= 0:
+            st.warning("Elo更新に使える実結果ログがありません。")
+            return
+        path = save_elo_ratings(updated)
+        st.success(f"Eloを更新しました: {updated_races}レース / {path}")
+
+
+def _race_result_for_elo(log: dict[str, Any]) -> list[dict[str, Any]]:
+    predictions = log.get("prediction_table", []) or log.get("prediction_log", {}).get("prediction_table", []) or []
+    name_by_number: dict[int, str] = {}
+    for row in predictions:
+        if not isinstance(row, dict):
+            continue
+        number = _safe_int_app(row.get("horse_number", row.get("馬番")), 0)
+        name = str(row.get("horse_name") or row.get("馬名") or "").strip()
+        if number > 0 and name:
+            name_by_number[number] = name
+    rows: list[dict[str, Any]] = []
+    for row in log.get("actual_result", []) or []:
+        if not isinstance(row, dict):
+            continue
+        number = _safe_int_app(row.get("horse_number", row.get("馬番")), 0)
+        finish = _safe_int_app(row.get("finish", row.get("着順")), 0)
+        name = str(row.get("horse_name") or row.get("馬名") or name_by_number.get(number, "")).strip()
+        if name and finish > 0:
+            rows.append({"horse_name": name, "finish": finish})
+    return rows
+
+
 def render_log_management() -> None:
     st.divider()
     st.subheader("ログ管理")
@@ -1337,6 +1554,13 @@ def _valid_actual_result_rows(frame: pd.DataFrame) -> list[dict[str, Any]]:
     return rows
 
 
+def _safe_int_app(value: Any, default: int = 0) -> int:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
+
+
 def ensure_recent_races_exist(result: dict[str, object]) -> None:
     for item in result.get("recent_races", []):
         if not isinstance(item, dict):
@@ -1359,7 +1583,20 @@ def render_results(result: dict[str, object], debug_mode: bool = False, predicti
     horse_analysis = result["horse_analysis"]
     pace_prediction = result["pace_prediction"]
     if result.get("lightweight_mode"):
-        st.info("軽量モードで実行しました。投稿用MP4を省略し、ブラウザ向け表示を優先しています。")
+        st.info("軽量モードで実行しました。予想実行時の動画生成・過去10年新規取得・音声/BGM生成は省略しています。")
+    if debug_mode:
+        debug_rows = {
+            "実行モード": result.get("execution_mode", ""),
+            "Monte Carlo回数": result.get("monte_carlo_runs", 0),
+            "予想実行時の動画生成": "ON" if result.get("video_generation_on_prediction") else "OFF",
+            "過去傾向データ使用": "あり" if result.get("trend_data_used") else "なし",
+            "処理時間": f"{float(result.get('processing_time_sec', 0.0) or 0.0):.2f}秒",
+        }
+        memory_usage = result.get("memory_usage_mb")
+        if isinstance(memory_usage, (int, float)):
+            debug_rows["メモリ使用量"] = f"{float(memory_usage):.1f} MB"
+        with st.expander("実行モード・軽量化デバッグ", expanded=False):
+            st.json(debug_rows)
 
     st.subheader("今回のシミュレーション着順（AI期待値最大の代表例）")
     single_result = result.get("single_result")
@@ -1412,6 +1649,30 @@ def render_results(result: dict[str, object], debug_mode: bool = False, predicti
     horse_display_mode = str(result.get("horse_display_mode", "marker"))
     st.info(f"使用レンダラー: {renderer_name}")
     st.info(f"馬表示モード: {horse_display_mode}")
+    video_duration_sec = int(result.get("video_duration_sec", 15 if result.get("lightweight_mode") else 30) or 15)
+    video_fps = int(result.get("video_fps", 12 if result.get("lightweight_mode") else 30) or 12)
+    video_width = int(result.get("video_width", 854 if result.get("lightweight_mode") else 1280) or 854)
+    video_height = int(result.get("video_height", 480 if result.get("lightweight_mode") else 720) or 480)
+    if st.button("簡易シミュレーション動画を生成", key="generate_simulation_video_button"):
+        try:
+            with st.spinner("race_timelineから動画を生成中です..."):
+                render_video_for_result(
+                    result=result,
+                    race_config=result.get("race_config", {}),
+                    horses=result.get("horse_inputs", []),
+                    video_format_label=str(result.get("video_format", "YouTube横長 16:9")),
+                    video_layout=str(result.get("video_layout", "side_scroll")),
+                    duration_sec=video_duration_sec,
+                    fps=video_fps,
+                    width=video_width,
+                    height=video_height,
+                )
+            st.session_state["simulation_result"] = result
+            st.success("レース動画を生成しました。")
+            st.rerun()
+        except Exception as exc:
+            st.error("動画生成中にエラーが発生しました。軽量モードまたは短い動画時間で再実行してください。")
+            st.exception(exc)
     html_path = existing_file_path(result.get("plotly_html_path"))
     gif_path = existing_file_path(result.get("gif_path"))
     mp4_path = existing_file_path(result.get("mp4_path"))
@@ -1464,6 +1725,9 @@ def render_video_for_result(
     video_format_label: str,
     video_layout: str,
     duration_sec: int,
+    fps: int = 30,
+    width: int | None = None,
+    height: int | None = None,
 ) -> None:
     output_dir = OUTPUT_DIR
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1477,10 +1741,12 @@ def render_video_for_result(
             "horses": horses,
             "output_path": str(output_path),
             "video_format": video_format_label,
-            "fps": 30,
+            "fps": fps,
             "duration_sec": duration_sec,
             "prediction_table": _prediction_table(result),
             "renderer_info": renderer_info,
+            "width": width,
+            "height": height,
         }
         if video_layout == "legacy_overview":
             video_path = render_race_video_from_timeline(**render_kwargs)
@@ -1493,7 +1759,9 @@ def render_video_for_result(
         result["video_layout"] = renderer_info.get("video_layout", video_layout)
         result["video_format"] = video_format_label
         result["video_duration_sec"] = int(renderer_info.get("duration_sec", duration_sec))
-        result["video_fps"] = int(renderer_info.get("fps", 30))
+        result["video_fps"] = int(renderer_info.get("fps", fps))
+        result["video_width"] = int(renderer_info.get("width", width or 0) or 0)
+        result["video_height"] = int(renderer_info.get("height", height or 0) or 0)
         result["video_total_frames"] = int(renderer_info.get("total_frames", 0) or 0)
         result["race_duration_sec"] = renderer_info.get("race_duration_sec", "")
         result["result_display_sec"] = renderer_info.get("result_display_sec", "")
@@ -1511,8 +1779,10 @@ def render_video_for_result(
         result["video_layout"] = video_layout
         result["video_format"] = video_format_label
         result["video_duration_sec"] = duration_sec
-        result["video_fps"] = 30
-        result["video_total_frames"] = 30 * duration_sec
+        result["video_fps"] = fps
+        result["video_width"] = int(width or 0)
+        result["video_height"] = int(height or 0)
+        result["video_total_frames"] = fps * duration_sec
         result["video_error"] = f"動画生成に失敗しました: {exc}"
         result.setdefault("log", []).append(result["video_error"])
 
@@ -1643,6 +1913,8 @@ def render_video_debug(result: dict[str, object]) -> None:
                     "horse_display_mode": result.get("horse_display_mode", ""),
                     "video_layout": result.get("video_layout", ""),
                     "duration_sec": result.get("video_duration_sec", ""),
+                    "width": result.get("video_width", ""),
+                    "height": result.get("video_height", ""),
                     "race_duration_sec": result.get("race_duration_sec", ""),
                     "result_display_sec": result.get("result_display_sec", ""),
                     "fps": result.get("video_fps", ""),
@@ -1769,6 +2041,12 @@ def render_fetch_debug(result: dict[str, object]) -> None:
                 st.warning("入力馬名と取得ページ上の馬名が一致していません。馬名検索または horse_id 取得の誤りを確認してください。")
             else:
                 st.info("取得ページ上の馬名を確認できないため、入力馬名との一致判定ができません。")
+
+            db_cols = st.columns(3)
+            db_cols[0].metric("horse_database", str(record.get("horse_database", "disabled") or "disabled"))
+            db_cols[1].metric("fetch回数", int(record.get("fetch_count", 0) or 0))
+            db_cols[2].write("DB保存先")
+            db_cols[2].code(str(record.get("horse_database_path", "-") or "-"), language="text")
 
             st.markdown("**raw_race_df（分析に使う前の生データ）**")
             render_debug_table_like(record.get("raw_race_df"))

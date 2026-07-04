@@ -7,6 +7,8 @@ from typing import Any, Protocol
 import pandas as pd
 
 from course_db import estimate_course_fit_score, get_track_bias_fit_score
+from elo_rating import load_elo_ratings as load_persisted_elo_ratings
+from elo_rating import normalize_elo_score as normalize_persisted_elo_score
 from errors import RaceDataFetchError
 from race_config import HorseEntry, calculate_weight_penalty
 from utils import clamp, normalize_track_condition, safe_mean, safe_std
@@ -1567,11 +1569,11 @@ class HorseAnalyzer:
                 raw_entries = (race.raw or {}).get("race_entries") or (race.raw or {}).get("entries")
                 if isinstance(raw_entries, list):
                     elo_rows.append({"race_id": race.race_id, "race_entries": raw_entries})
-        ratings = update_elo_ratings(elo_rows, {})
+        ratings = update_elo_ratings(elo_rows, load_persisted_elo_ratings())
         enriched: list[HorseAbility] = []
         for ability in abilities:
             rating = float(ratings.get(ability.horse_name, 1500.0))
-            elo_score_value = normalized_elo_score(rating)
+            elo_score_value = normalize_persisted_elo_score(rating)
             ability_score = clamp(ability.base_ability_score)
             race_power = clamp(ability_score * 0.75 + ability.avg_race_score * 0.25, 40.0, 95.0)
             enriched.append(

@@ -18,27 +18,33 @@ from horse_analyzer import (
     parse_race_time,
     race_result_to_recent_dict,
 )
+from horse_database import get_or_fetch_horse_profile
 from pace_predictor import PacePredictor
 from race_config import RaceConfig, HorseEntry, demo_horses, prompt_horses, prompt_race_config
 from simulator import RaceSimulator
 from data_fetcher import NetkeibaRaceResultProvider
 
 
-def load_provider(module_name: str | None, factory_name: str | None) -> RaceResultProvider:
+def load_provider(
+    module_name: str | None,
+    factory_name: str | None,
+    use_local_database: bool = True,
+    force_refresh_data: bool = False,
+) -> RaceResultProvider:
     """Load an existing recent-result fetcher, or use strict netkeiba fetching."""
     if not module_name:
-        return _wrap_provider(NetkeibaRaceResultProvider())
+        return _wrap_provider(NetkeibaRaceResultProvider(), use_local_database, force_refresh_data)
     module = importlib.import_module(module_name)
     factory = getattr(module, factory_name or "get_provider", None)
     if factory is None:
         provider = getattr(module, "provider", None)
         if provider is None:
             raise AttributeError(f"{module_name} must expose get_provider() or provider")
-        return _wrap_provider(provider)
-    return _wrap_provider(factory())
+        return _wrap_provider(provider, use_local_database, force_refresh_data)
+    return _wrap_provider(factory(), use_local_database, force_refresh_data)
 
 
-def _wrap_provider(provider: Any) -> RaceResultProvider:
+def _wrap_provider(provider: Any, use_local_database: bool = False, force_refresh_data: bool = False) -> RaceResultProvider:
     """Accept providers returning RaceResult objects, dicts, or DataFrames."""
 
     class ProviderAdapter:
@@ -46,11 +52,24 @@ def _wrap_provider(provider: Any) -> RaceResultProvider:
             self.inner_provider = inner_provider
             self.fetch_debug: list[dict[str, Any]] = []
             self._codex_provider_adapter = True
+            self.use_local_database = bool(use_local_database)
+            self.force_refresh_data = bool(force_refresh_data)
+            self.fetch_count = 0
 
         def get_recent_results(self, horse_name: str, limit: int = 5) -> list[RaceResult]:
             raw: Any = []
+            profile: dict[str, Any] | None = None
             try:
-                raw = self.inner_provider.get_recent_results(horse_name, limit=limit)
+                if self.use_local_database:
+                    profile = get_or_fetch_horse_profile(
+                        horse_name,
+                        lambda: self._fetch_profile(horse_name, limit),
+                        force_refresh=self.force_refresh_data,
+                    )
+                    raw = (profile or {}).get("recent_races", [])
+                else:
+                    raw = self.inner_provider.get_recent_results(horse_name, limit=limit)
+                    self.fetch_count += 1
                 records = _raw_to_records(raw)
                 normalized = [_to_race_result(item) for item in records[:limit]]
             except RaceDataFetchError as exc:
@@ -68,6 +87,10 @@ def _wrap_provider(provider: Any) -> RaceResultProvider:
                 ) from exc
 
             debug_record = _build_fetch_debug_record(self.inner_provider, horse_name, raw, normalized)
+            if profile is not None:
+                debug_record["horse_database"] = profile.get("_database_status", "")
+                debug_record["horse_database_path"] = profile.get("_database_path", "")
+                debug_record["fetch_count"] = self.fetch_count
             self.fetch_debug.append(debug_record)
             if not normalized:
                 raise RaceDataFetchError(
@@ -86,6 +109,23 @@ def _wrap_provider(provider: Any) -> RaceResultProvider:
 
         def get_fetch_debug(self) -> list[dict[str, Any]]:
             return list(self.fetch_debug)
+
+        def _fetch_profile(self, horse_name: str, limit: int) -> dict[str, Any] | None:
+            raw = self.inner_provider.get_recent_results(horse_name, limit=limit)
+            self.fetch_count += 1
+            records: list[dict[str, Any]] = []
+            for item in _raw_to_records(raw):
+                if isinstance(item, RaceResult):
+                    records.append(race_result_to_recent_dict(item))
+                elif isinstance(item, dict):
+                    records.append(dict(item))
+            if not records:
+                return None
+            return {
+                "horse_name": horse_name,
+                "recent_races": records,
+                "fetch_debug": _provider_debug_info(self.inner_provider, horse_name),
+            }
 
         def get_pedigree_info(self, horse_name: str) -> dict[str, Any] | None:
             if not hasattr(self.inner_provider, "get_pedigree_info"):
@@ -350,6 +390,10 @@ def run_race_simulation(
     video_format: str = "youtube",
     timeline_mode: str = "controlled",
     seed: int | None = None,
+    make_animation: bool = True,
+    save_timeline_csv: bool = True,
+    use_local_database: bool = True,
+    force_refresh_data: bool = False,
 ) -> dict[str, Any]:
     """Run the full pipeline for CLI, Streamlit, or tests.
 
@@ -366,9 +410,9 @@ def run_race_simulation(
 
     config = _coerce_race_config(race_config)
     entries = _coerce_horses(horses)
-    provider = provider or load_provider(provider_module, provider_factory)
+    provider = provider or load_provider(provider_module, provider_factory, use_local_database, force_refresh_data)
     if not getattr(provider, "_codex_provider_adapter", False):
-        provider = _wrap_provider(provider)
+        provider = _wrap_provider(provider, use_local_database, force_refresh_data)
 
     logs: list[str] = []
     logs.append("直近5走データを取得します。")
@@ -426,18 +470,23 @@ def run_race_simulation(
     sections_csv = output_path / f"race_sections_{timestamp}.csv"
     timeline_csv = output_path / f"race_timeline_{timestamp}.csv"
     sections_table = result.states_dataframe()
-    timeline_table = result.timeline_dataframe()
+    timeline_table = result.timeline_dataframe() if save_timeline_csv else pd.DataFrame()
     ability_table.to_csv(ability_csv, index=False, encoding="utf-8-sig")
     result.ranking.to_csv(ranking_csv, index=False, encoding="utf-8-sig")
     sections_table.to_csv(sections_csv, index=False, encoding="utf-8-sig")
-    timeline_table.to_csv(timeline_csv, index=False, encoding="utf-8-sig")
+    if save_timeline_csv:
+        timeline_table.to_csv(timeline_csv, index=False, encoding="utf-8-sig")
 
     html_path = ""
     renderer_name = "Matplotlib marker renderer"
     horse_display_mode = "marker"
     from animation import Race3DAnimation, RaceAnimation
 
-    if animation_mode == "3d_plotly":
+    if not make_animation or animation_mode == "none":
+        paths = type("AnimationPaths", (), {"gif_path": "", "mp4_path": ""})()
+        animation_path = ""
+        logs.append("動画生成をスキップしました。")
+    elif animation_mode == "3d_plotly":
         renderer_name = "Plotly marker renderer"
         html_path = Race3DAnimation(result).save_html(
             output_dir=str(output_path),
@@ -494,7 +543,8 @@ def run_race_simulation(
             make_mp4=make_mp4,
         )
         animation_path = paths.gif_path if make_gif else paths.mp4_path
-    logs.append("レース動画を生成しました。")
+    if make_animation and animation_mode != "none":
+        logs.append("レース動画を生成しました。")
 
     return {
         "race_config": config.to_dict(),
@@ -520,7 +570,7 @@ def run_race_simulation(
             "horse_analysis": str(ability_csv),
             "ranking": str(ranking_csv),
             "sections": str(sections_csv),
-            "timeline": str(timeline_csv),
+            "timeline": str(timeline_csv) if save_timeline_csv else "",
         },
         "log": logs,
     }

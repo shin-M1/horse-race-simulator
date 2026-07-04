@@ -111,6 +111,23 @@ def save_same_race_trend_database(trend_database: dict, output_dir: str | Path =
     return {"json": str(json_path), "csv": str(csv_path)}
 
 
+def load_same_race_trend_database(
+    race_name: str,
+    venue: str,
+    distance: int,
+    output_dir: str | Path = TREND_DATABASE_DIR,
+) -> dict | None:
+    directory = Path(output_dir)
+    path = directory / f"{_safe_filename(f'{race_name}_{venue}_{_to_int(distance)}')}.json"
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
 def analyze_same_race_trend_database(trend_database: dict) -> dict:
     rows = [dict(row) for row in trend_database.get("rows", []) if isinstance(row, dict)]
     if not rows:

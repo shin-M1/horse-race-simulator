@@ -13,15 +13,14 @@ import pandas as pd
 DEFAULT_WEIGHTS = {
     "horse_ability_score": 0.25,
     "race_strength_score": 0.15,
-    "elo_score": 0.15,
+    "normalized_elo_score": 0.15,
     "late_kick_score": 0.15,
     "course_fit_score": 0.10,
     "pace_fit_score": 0.10,
-    "jockey_score": 0.05,
     "track_bias_fit_score": 0.05,
-    "race_trend_score": 0.10,
+    "race_trend_score": 0.05,
 }
-WEIGHTS_PATH = Path("outputs/model_weights.json")
+WEIGHTS_PATH = Path("data/model/prediction_weights.json")
 TRAINING_COLUMNS = [
     "race_id",
     "race_name",
@@ -34,6 +33,7 @@ TRAINING_COLUMNS = [
     "prediction_score",
     "horse_ability_score",
     "race_strength_score",
+    "normalized_elo_score",
     "elo_score",
     "late_kick_score",
     "course_fit_score",
@@ -77,6 +77,7 @@ def build_training_dataset(evaluation_logs: list[dict[str, Any]]) -> pd.DataFram
                 "prediction_score": _number(prediction.get("prediction_score", prediction.get("score", 50.0))),
                 "horse_ability_score": _number(prediction.get("horse_ability_score", prediction.get("race_power", 50.0))),
                 "race_strength_score": _number(prediction.get("race_strength_score", 50.0)),
+                "normalized_elo_score": _number(prediction.get("normalized_elo_score", prediction.get("elo_score", 50.0))),
                 "elo_score": _number(prediction.get("elo_score", prediction.get("normalized_elo_score", 50.0))),
                 "late_kick_score": _number(prediction.get("late_kick_score", 50.0)),
                 "course_fit_score": _number(prediction.get("course_fit_score", 50.0)),
@@ -105,7 +106,7 @@ def optimize_prediction_weights(
 ) -> dict[str, Any]:
     if training_df.empty:
         raise ValueError("training_df is empty")
-    if metric not in {"top3_hit_rate", "winner_hit_rate", "brier_score", "log_loss"}:
+    if metric not in {"top3_hit_rate", "winner_hit_rate", "mean_rank_error", "brier_score", "log_loss"}:
         raise ValueError(f"unsupported metric: {metric}")
     n_trials = max(1, int(n_trials))
     rng = random.Random(seed)
@@ -170,7 +171,10 @@ def load_model_weights(path: str | Path = WEIGHTS_PATH) -> dict[str, float]:
 
 
 def normalize_weights(weights: dict[str, Any]) -> dict[str, float]:
-    values = {key: max(0.0, _number(weights.get(key, DEFAULT_WEIGHTS[key]))) for key in DEFAULT_WEIGHTS}
+    source = dict(weights or {})
+    if "normalized_elo_score" not in source and "elo_score" in source:
+        source["normalized_elo_score"] = source["elo_score"]
+    values = {key: max(0.0, _number(source.get(key, DEFAULT_WEIGHTS[key]))) for key in DEFAULT_WEIGHTS}
     total = sum(values.values())
     if total <= 0:
         return dict(DEFAULT_WEIGHTS)
@@ -184,7 +188,7 @@ def apply_prediction_weights(table: pd.DataFrame, weights: dict[str, Any] | None
     result = table.copy()
     raw = pd.Series(0.0, index=result.index, dtype=float)
     for feature, weight in active.items():
-        source = "normalized_elo_score" if feature == "elo_score" and feature not in result.columns else feature
+        source = "elo_score" if feature == "normalized_elo_score" and feature not in result.columns else feature
         values = result[source] if source in result.columns else pd.Series(50.0, index=result.index)
         raw += pd.to_numeric(values, errors="coerce").fillna(50.0) * weight
     result["optimized_raw_score"] = raw.round(4)
@@ -204,7 +208,8 @@ def _evaluate_weights(training_df: pd.DataFrame, weights: dict[str, float], metr
     work = training_df.copy()
     work["candidate_score"] = 0.0
     for feature, weight in weights.items():
-        work["candidate_score"] += pd.to_numeric(work[feature], errors="coerce").fillna(50.0) * weight
+        source = "elo_score" if feature == "normalized_elo_score" and feature not in work.columns else feature
+        work["candidate_score"] += pd.to_numeric(work[source], errors="coerce").fillna(50.0) * weight
     race_scores: list[float] = []
     for _, race in work.groupby("race_id", sort=False):
         ordered = race.sort_values("candidate_score", ascending=False)
@@ -213,6 +218,13 @@ def _evaluate_weights(training_df: pd.DataFrame, weights: dict[str, float], metr
             race_scores.append(float(ordered.head(3)["is_top3"].sum()) / denominator)
         elif metric == "winner_hit_rate":
             race_scores.append(float(ordered.iloc[0]["is_win"] == 1))
+        elif metric == "mean_rank_error":
+            predicted_rank = {number: rank for rank, number in enumerate(ordered["horse_number"], start=1)}
+            errors = [
+                abs(predicted_rank.get(int(row["horse_number"]), len(race) + 1) - int(row["finish"]))
+                for _, row in race.iterrows()
+            ]
+            race_scores.append(-float(np.mean(errors)) if errors else float("-inf"))
         else:
             centered = (race["candidate_score"] - race["candidate_score"].mean()) / 10.0
             probabilities = 1.0 / (1.0 + np.exp(-centered.clip(-20, 20)))
@@ -224,6 +236,34 @@ def _evaluate_weights(training_df: pd.DataFrame, weights: dict[str, float], metr
                 loss = -(targets * np.log(clipped) + (1 - targets) * np.log(1 - clipped)).mean()
                 race_scores.append(-float(loss))
     return float(np.mean(race_scores)) if race_scores else float("-inf")
+
+
+def score_with_weights(df: pd.DataFrame, weights: dict[str, Any]) -> pd.Series:
+    if df.empty:
+        return pd.Series(dtype=float)
+    active = normalize_weights(weights)
+    score = pd.Series(0.0, index=df.index, dtype=float)
+    for feature, weight in active.items():
+        source = "elo_score" if feature == "normalized_elo_score" and feature not in df.columns else feature
+        values = df[source] if source in df.columns else pd.Series(50.0, index=df.index)
+        score += pd.to_numeric(values, errors="coerce").fillna(50.0) * weight
+    return score
+
+
+def evaluate_weights(
+    df: pd.DataFrame,
+    weights: dict[str, Any],
+    metric: str = "top3_hit_rate",
+) -> float:
+    return _evaluate_weights(df, normalize_weights(weights), metric)
+
+
+def save_prediction_weights(weights: dict[str, Any], path: str | Path = WEIGHTS_PATH) -> str:
+    return str(save_model_weights(weights, path))
+
+
+def load_prediction_weights(path: str | Path = WEIGHTS_PATH) -> dict[str, float]:
+    return load_model_weights(path)
 
 
 def _compress_scores(scores: pd.Series) -> pd.Series:

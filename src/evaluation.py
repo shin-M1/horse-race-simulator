@@ -46,7 +46,7 @@ def save_prediction_log(
         duplicate_action=duplicate_action,
     )
     csv_path = path.with_suffix(".csv")
-    timeline = simulation_result.get("race_timeline") or simulation_result.get("controlled_timeline") or []
+    timeline = [] if simulation_result.get("skip_timeline_log") else simulation_result.get("race_timeline") or simulation_result.get("controlled_timeline") or []
     timeline_path: Path | None = None
     if isinstance(timeline, list) and timeline:
         timeline_dir = directory / "timelines"

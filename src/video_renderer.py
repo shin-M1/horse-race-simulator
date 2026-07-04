@@ -49,6 +49,8 @@ def render_race_video(
     duration_sec: int = 60,
     prediction_table: pd.DataFrame | None = None,
     renderer_info: dict[str, str] | None = None,
+    width: int | None = None,
+    height: int | None = None,
 ) -> str:
     """Render an original CG-style race video as MP4.
 
@@ -66,12 +68,14 @@ def render_race_video(
             duration_sec=duration_sec,
             prediction_table=prediction_table if prediction_table is not None else _extract_prediction_table(simulation_result),
             renderer_info=renderer_info,
+            width=width,
+            height=height,
         )
         return rendered_path
 
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
-    width, height = _video_dimensions(video_format)
+    width, height = _video_dimensions(video_format, width, height)
     duration_sec = max(5, int(duration_sec))
     fps = max(8, int(fps))
 
@@ -124,6 +128,8 @@ def render_race_video_from_timeline(
     duration_sec: int = 60,
     prediction_table: pd.DataFrame | None = None,
     renderer_info: dict[str, str] | None = None,
+    width: int | None = None,
+    height: int | None = None,
 ) -> str:
     """Legacy overview renderer from a precomputed race_timeline."""
     if not race_timeline:
@@ -131,7 +137,7 @@ def render_race_video_from_timeline(
 
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
-    width, height = _video_dimensions(video_format)
+    width, height = _video_dimensions(video_format, width, height)
     fps = max(8, int(fps))
     duration_sec = max(1, int(duration_sec))
     total_frames = max(2, fps * duration_sec)
@@ -158,6 +164,8 @@ def render_race_video_from_timeline(
         renderer_info["video_layout"] = "legacy_overview"
         renderer_info["duration_sec"] = str(duration_sec)
         renderer_info["fps"] = str(fps)
+        renderer_info["width"] = str(width)
+        renderer_info["height"] = str(height)
         renderer_info["total_frames"] = str(total_frames)
         renderer_info["race_duration_sec"] = f"{race_total_frames / fps:.3f}"
         renderer_info["result_display_sec"] = f"{result_total_frames / fps:.3f}"
@@ -181,6 +189,8 @@ def render_side_scroll_race_video(
     duration_sec: int = 60,
     prediction_table: pd.DataFrame | None = None,
     renderer_info: dict[str, str] | None = None,
+    width: int | None = None,
+    height: int | None = None,
 ) -> str:
     """Render a side-scrolling race video from race_timeline."""
     if not race_timeline:
@@ -188,7 +198,7 @@ def render_side_scroll_race_video(
 
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
-    width, height = _video_dimensions(video_format)
+    width, height = _video_dimensions(video_format, width, height)
     fps = max(8, int(fps))
     duration_sec = max(1, int(duration_sec))
     total_frames = max(2, fps * duration_sec)
@@ -215,6 +225,8 @@ def render_side_scroll_race_video(
         renderer_info["video_layout"] = "side_scroll"
         renderer_info["duration_sec"] = str(duration_sec)
         renderer_info["fps"] = str(fps)
+        renderer_info["width"] = str(width)
+        renderer_info["height"] = str(height)
         renderer_info["total_frames"] = str(total_frames)
         renderer_info["race_duration_sec"] = f"{race_total_frames / fps:.3f}"
         renderer_info["result_display_sec"] = f"{result_total_frames / fps:.3f}"
@@ -1495,7 +1507,9 @@ def _camera_shift(leader: dict[str, Any], payload: dict[str, Any]) -> tuple[floa
     return sx, sy
 
 
-def _video_dimensions(video_format: str) -> tuple[int, int]:
+def _video_dimensions(video_format: str, width: int | None = None, height: int | None = None) -> tuple[int, int]:
+    if width and height:
+        return max(320, int(width)), max(240, int(height))
     return VIDEO_FORMATS.get(video_format, VIDEO_FORMATS.get(video_format.lower(), (1920, 1080)))
 
 
