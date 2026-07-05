@@ -844,6 +844,7 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
                 if isinstance(trend_analysis, dict):
                     race_config_for_prediction["same_race_trend_analysis"] = trend_analysis
                 effective_monte_carlo_runs = min(int(n_simulations), int(mode_settings["monte_carlo_runs"]))
+                skip_monte_carlo_for_cloud = bool(lightweight_mode and is_streamlit_cloud())
 
                 active_weights = run_step("STEP5 WeightOptimizer", lambda: current_weights)
                 run_step(
@@ -868,36 +869,51 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
                         "trend_analysis": trend_analysis,
                         "store_trial_timelines": bool(mode_settings["store_trial_timelines"]),
                         "store_simulation_history": bool(mode_settings.get("store_simulation_history", True)),
+                        "save_outputs": not skip_monte_carlo_for_cloud,
                     }
 
                 monte_carlo_inputs = run_step("STEP7-1 MonteCarlo入力作成", build_monte_carlo_inputs)
-                mark_step("STEP7-2 run_monte_carlo開始")
-                try:
-                    with st.spinner("Monte Carlo予想を実行中です..."):
-                        monte_carlo_prediction = run_monte_carlo_prediction(**monte_carlo_inputs)
-                except Exception as exc:
-                    st.session_state["prediction_failed_step"] = "STEP7-2 run_monte_carlo開始"
-                    logger.exception("STEP7-2 run_monte_carlo failed")
-                    render_monte_carlo_failure_debug(
-                        exc,
-                        horse_count=len(horses),
-                        runs=effective_monte_carlo_runs,
-                        execution_mode=execution_mode,
-                        store_trial_timelines=bool(mode_settings["store_trial_timelines"]),
-                        store_simulation_history=bool(mode_settings.get("store_simulation_history", True)),
+                mark_step("STEP7-2 Monte Carlo開始")
+                if skip_monte_carlo_for_cloud:
+                    st.warning("Cloud軽量モードでは安定性優先のためMonte Carloをスキップしています。")
+                    logger.info(
+                        "Skipping Monte Carlo on Streamlit Cloud lightweight mode: horses=%s runs=%s",
+                        len(horses),
+                        effective_monte_carlo_runs,
                     )
-                    if lightweight_mode:
-                        st.warning("Cloud軽量モードのため簡易シミュレーション結果を表示しています。")
-                        monte_carlo_prediction = build_lightweight_prediction_fallback(
-                            result,
-                            horses,
-                            seed=int(prediction_seed),
-                            reason=f"Monte Carlo failed: {type(exc).__name__}",
+                    monte_carlo_prediction = build_lightweight_prediction_fallback(
+                        result,
+                        horses,
+                        seed=int(prediction_seed),
+                        reason="Streamlit Cloud lightweight mode skipped Monte Carlo",
+                    )
+                else:
+                    try:
+                        with st.spinner("Monte Carlo予想を実行中です..."):
+                            monte_carlo_prediction = run_monte_carlo_prediction(**monte_carlo_inputs)
+                    except Exception as exc:
+                        st.session_state["prediction_failed_step"] = "STEP7-2 Monte Carlo開始"
+                        logger.exception("STEP7-2 run_monte_carlo failed")
+                        render_monte_carlo_failure_debug(
+                            exc,
+                            horse_count=len(horses),
+                            runs=effective_monte_carlo_runs,
+                            execution_mode=execution_mode,
+                            store_trial_timelines=bool(mode_settings["store_trial_timelines"]),
+                            store_simulation_history=bool(mode_settings.get("store_simulation_history", True)),
                         )
-                    else:
-                        raise
+                        if lightweight_mode:
+                            st.warning("Cloud軽量モードのため簡易シミュレーション結果を表示しています。")
+                            monte_carlo_prediction = build_lightweight_prediction_fallback(
+                                result,
+                                horses,
+                                seed=int(prediction_seed),
+                                reason=f"Monte Carlo failed: {type(exc).__name__}",
+                            )
+                        else:
+                            raise
 
-                mark_step("STEP7-3 run_monte_carlo完了")
+                mark_step("STEP7-3 Monte Carlo終了")
                 if not is_valid_monte_carlo_result(monte_carlo_prediction):
                     invalid_error = ValueError("Monte Carlo result is empty or missing required columns")
                     logger.error("STEP7-3 invalid Monte Carlo result: %s", invalid_error)
@@ -913,7 +929,7 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
                         raise invalid_error
 
                 result["prediction"] = monte_carlo_prediction
-                mark_step("STEP7-4 結果整形")
+                mark_step("STEP7-4 DataFrame生成")
                 _merge_prediction_trend_columns(result)
                 result["prediction_engine_requested"] = prediction_engine_requested
                 result["prediction_engine"] = result["prediction"].get("prediction_engine", active_prediction_engine)
@@ -929,7 +945,7 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
                         if result["prediction"].get("fallback")
                         else "Monte Carlo trial with highest AI expected value"
                     )
-                mark_step("STEP7-5 表示用DataFrame作成")
+                mark_step("STEP7-5 結果表示")
                 prediction_table_for_display = _prediction_table(result)
                 if not isinstance(prediction_table_for_display, pd.DataFrame) or prediction_table_for_display.empty:
                     raise ValueError("AI予想ランキングの表示用DataFrameを作成できませんでした。")

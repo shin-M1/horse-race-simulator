@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
 import random
 from datetime import datetime
 from pathlib import Path
@@ -121,6 +122,24 @@ def _make_dataframe_python_safe(frame: pd.DataFrame) -> pd.DataFrame:
     return safe_frame
 
 
+def _memory_usage_mb() -> float | None:
+    try:
+        import psutil  # type: ignore
+
+        return psutil.Process(os.getpid()).memory_info().rss / (1024 * 1024)
+    except Exception:
+        return None
+
+
+def _log_memory(message: str, **extra: Any) -> None:
+    memory_mb = _memory_usage_mb()
+    payload = " ".join(f"{key}={value}" for key, value in extra.items())
+    if memory_mb is None:
+        logger.info("%s %s memory_mb=unavailable", message, payload)
+    else:
+        logger.info("%s %s memory_mb=%.1f", message, payload, memory_mb)
+
+
 def run_monte_carlo_prediction(*args: Any, **kwargs: Any) -> dict[str, Any]:
     try:
         return _run_monte_carlo_prediction_impl(*args, **kwargs)
@@ -145,8 +164,16 @@ def _run_monte_carlo_prediction_impl(
     store_trial_timelines: bool = True,
     store_simulation_history: bool = True,
     max_stored_trials: int | None = None,
+    save_outputs: bool = True,
 ) -> dict[str, Any]:
     """Run repeated race simulations and aggregate finish-position probabilities."""
+    _log_memory(
+        "MonteCarlo entry",
+        n_simulations=n_simulations,
+        store_trial_timelines=store_trial_timelines,
+        store_simulation_history=store_simulation_history,
+        save_outputs=save_outputs,
+    )
     raw_race_config = race_config
     if trend_analysis is None and isinstance(raw_race_config, dict):
         maybe_trends = raw_race_config.get("same_race_trend_analysis") or raw_race_config.get("race_trend_analysis")
@@ -208,6 +235,7 @@ def _run_monte_carlo_prediction_impl(
             aggregates[horse_number]["actual_styles"].append(str(row["actual_running_style"]))
         if (trial_index + 1) % max(1, n_simulations // 5) == 0:
             logs.append(f"{trial_index + 1}/{n_simulations} simulations completed")
+        _log_memory("MonteCarlo trial completed", trial=trial_index + 1, total=n_simulations)
 
     prediction_table = _build_prediction_table(config, aggregates, horse_count, pace, trend_analysis=trend_analysis)
     active_engine = str(prediction_engine or "rule_based")
@@ -222,16 +250,21 @@ def _run_monte_carlo_prediction_impl(
         else:
             prediction_table = apply_ml_prediction(prediction_table, top3_model, win_model)
     prediction_table["prediction_engine"] = active_engine
+    _log_memory("MonteCarlo before representative trial", stored_trials=len(simulation_trials))
     representative_trial = (
         select_highest_expected_value_trial(prediction_table, simulation_trials)
         if simulation_trials
         else _representative_trial_from_prediction_table(prediction_table, seed)
     )
-    saved_paths = _save_prediction_outputs(
-        prediction_table=prediction_table,
-        config=config,
-        horses=entries,
-        output_dir=output_dir,
+    saved_paths = (
+        _save_prediction_outputs(
+            prediction_table=prediction_table,
+            config=config,
+            horses=entries,
+            output_dir=output_dir,
+        )
+        if save_outputs
+        else {}
     )
     summary = _build_summary(prediction_table)
     summary.update(
@@ -248,7 +281,11 @@ def _run_monte_carlo_prediction_impl(
             "store_trial_timelines": bool(store_trial_timelines),
         }
     )
-    logs.append(f"Prediction CSV saved: {saved_paths['prediction_table']}")
+    if saved_paths:
+        logs.append(f"Prediction CSV saved: {saved_paths['prediction_table']}")
+    else:
+        logs.append("Prediction CSV save skipped.")
+    _log_memory("MonteCarlo exit", rows=len(prediction_table), stored_trials=len(simulation_trials))
     return {
         "prediction_table": _make_dataframe_python_safe(prediction_table),
         "simulation_trials": simulation_trials,
