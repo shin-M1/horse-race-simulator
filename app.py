@@ -40,6 +40,7 @@ for module_name in [
     "weight_optimizer",
     "ml_model",
     "monte_carlo",
+    "public_prediction",
     "result_formatter",
     "video_renderer",
     "netkeiba_fetcher",
@@ -114,6 +115,9 @@ from ml_model import (
     train_prediction_model,
 )
 from monte_carlo import run_monte_carlo_prediction
+from horse_analyzer import HorseAnalyzer
+from pace_predictor import PacePredictor
+from public_prediction import build_public_prediction_result, should_use_public_prediction
 from race_data_fetcher import load_prediction_race_data
 from race_database import get_or_fetch_race_data
 from race_trend_analyzer import analyze_same_race_trends
@@ -504,6 +508,72 @@ def build_lightweight_prediction_fallback(
     }
 
 
+def run_public_prediction_analysis(
+    race_config: dict[str, Any],
+    horses: list[dict[str, Any]],
+    *,
+    provider_module: str | None = None,
+    provider_factory: str | None = None,
+    use_local_database: bool = True,
+    force_refresh_data: bool = False,
+    seed: int | None = 42,
+) -> dict[str, Any]:
+    """Fetch recent races and analyze horses without creating timelines or videos."""
+    if seed is not None:
+        random.seed(seed)
+    config = simulation_main._coerce_race_config(race_config)
+    entries = simulation_main._coerce_horses(horses)
+    provider = simulation_main.load_provider(provider_module, provider_factory, use_local_database, force_refresh_data)
+    if not getattr(provider, "_codex_provider_adapter", False):
+        provider = simulation_main._wrap_provider(provider, use_local_database, force_refresh_data)
+
+    analyzer = HorseAnalyzer(provider, config)
+    abilities = analyzer.analyze_many(entries)
+    ability_table = analyzer.to_dataframe(abilities)
+    if "actual_running_style" not in ability_table.columns and "primary_running_style" in ability_table.columns:
+        ability_table["actual_running_style"] = ability_table["primary_running_style"]
+    if "actual_running_style_fixed" not in ability_table.columns and "primary_running_style" in ability_table.columns:
+        ability_table["actual_running_style_fixed"] = ability_table["primary_running_style"]
+    if "adjusted_style_profile" not in ability_table.columns and "base_style_profile" in ability_table.columns:
+        ability_table["adjusted_style_profile"] = ability_table["base_style_profile"]
+
+    pace = PacePredictor().predict(abilities)
+    recent_races = [
+        {
+            "horse_name": ability.horse_name,
+            "recent_races": [simulation_main.race_result_to_recent_dict(race) for race in ability.recent_results[:5]],
+        }
+        for ability in abilities
+    ]
+    fetch_debug = provider.get_fetch_debug() if hasattr(provider, "get_fetch_debug") else []
+    return {
+        "race_config": config.to_dict(),
+        "ranking": pd.DataFrame(),
+        "sections": pd.DataFrame(),
+        "timeline": pd.DataFrame(),
+        "race_timeline": [],
+        "horse_analysis": ability_table,
+        "pace_prediction": pace.to_dict(),
+        "abilities": abilities,
+        "pace": pace,
+        "recent_races": recent_races,
+        "horse_inputs": [entry.to_dict() for entry in entries],
+        "fetch_debug": fetch_debug,
+        "animation_path": "",
+        "gif_path": "",
+        "mp4_path": "",
+        "plotly_html_path": "",
+        "renderer_name": "public prediction renderer disabled",
+        "horse_display_mode": "marker",
+        "timeline_mode": "public_prediction",
+        "csv_paths": {},
+        "log": [
+            "公開版AI予想モード: 近走取得・能力分析・ペース予測のみ実行しました。",
+            "Monte Carlo、race_timeline、動画生成、シミュレーション履歴保存はスキップしました。",
+        ],
+    }
+
+
 def is_streamlit_control_exception(exc: BaseException) -> bool:
     return exc.__class__.__name__ in {"StopException", "RerunException", "FragmentHandledException"}
 
@@ -555,10 +625,22 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
     lightweight_mode = execution_mode == "軽量モード"
     use_local_database = st.sidebar.checkbox("保存済みDBを優先する", value=True)
     force_refresh_data = st.sidebar.checkbox("データを再取得する", value=False)
+    public_prediction_only = st.sidebar.checkbox(
+        "公開版AI予想のみ実行",
+        value=cloud_environment,
+        disabled=cloud_environment,
+        help="ONにするとMonte Carlo、race_timeline、動画生成を使わず公開版と同じ軽量AI予想だけを実行します。",
+    )
+    public_prediction_active = should_use_public_prediction(cloud_environment, public_prediction_only)
     st.session_state["execution_mode"] = execution_mode
     st.session_state["execution_mode_settings"] = mode_settings
+    st.session_state["public_prediction_mode"] = public_prediction_active
     if cloud_environment and execution_mode == "高品質動画モード":
         st.warning("高品質動画モードはStreamlit Cloudでは重すぎるため、ローカル実行を推奨します。")
+    if public_prediction_active:
+        st.info("公開版AI予想モード")
+        st.info("Monte Carloシミュレーション・動画生成はCloudでは無効です。")
+        st.info("高品質シミュレーションはローカル版をご利用ください。")
 
     lookup_col, date_col, fetch_col = st.columns([2, 1, 1])
     with lookup_col:
@@ -701,8 +783,8 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
     create_trends = st.button(
         "過去10年傾向データを作成",
         key="create_same_race_trend_database_button",
-        disabled=lightweight_mode,
-        help="軽量モードでは無効です。ローカルの通常モード以上で事前作成してください。",
+        disabled=lightweight_mode or public_prediction_active,
+        help="軽量モード・公開版AI予想モードでは無効です。ローカルの通常モード以上で事前作成してください。",
     )
     if create_trends:
         if not trend_name_for_button or not trend_venue_for_button or trend_distance_for_button <= 0:
@@ -785,6 +867,16 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
 
             def execute_base_simulation() -> dict[str, Any]:
                 with st.spinner("直近5走取得、分析、予想を実行中です..."):
+                    if public_prediction_active:
+                        return run_public_prediction_analysis(
+                            race_config=race_config,
+                            horses=horses,
+                            provider_module=provider_module.strip() or None,
+                            provider_factory=provider_factory.strip() or None,
+                            use_local_database=use_local_database,
+                            force_refresh_data=force_refresh_data,
+                            seed=42,
+                        )
                     return run_race_simulation(
                         race_config=race_config,
                         horses=horses,
@@ -843,8 +935,11 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
                 race_config_for_prediction = dict(race_config)
                 if isinstance(trend_analysis, dict):
                     race_config_for_prediction["same_race_trend_analysis"] = trend_analysis
-                effective_monte_carlo_runs = min(int(n_simulations), int(mode_settings["monte_carlo_runs"]))
-                skip_monte_carlo_for_cloud = bool(lightweight_mode and is_streamlit_cloud())
+                effective_monte_carlo_runs = (
+                    0
+                    if public_prediction_active
+                    else min(int(n_simulations), int(mode_settings["monte_carlo_runs"]))
+                )
 
                 active_weights = run_step("STEP5 WeightOptimizer", lambda: current_weights)
                 run_step(
@@ -855,7 +950,17 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
                     ],
                 )
 
-                def build_monte_carlo_inputs() -> dict[str, Any]:
+                def build_prediction_inputs() -> dict[str, Any]:
+                    if public_prediction_active:
+                        return {
+                            "race_config": race_config_for_prediction,
+                            "horses": horses,
+                            "abilities": result.get("abilities") or [],
+                            "pace": result.get("pace"),
+                            "prediction_weights": active_weights,
+                            "trend_analysis": trend_analysis,
+                            "seed": int(prediction_seed),
+                        }
                     return {
                         "race_config": race_config_for_prediction,
                         "horses": horses,
@@ -869,28 +974,25 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
                         "trend_analysis": trend_analysis,
                         "store_trial_timelines": bool(mode_settings["store_trial_timelines"]),
                         "store_simulation_history": bool(mode_settings.get("store_simulation_history", True)),
-                        "save_outputs": not skip_monte_carlo_for_cloud,
+                        "save_outputs": True,
                     }
 
-                monte_carlo_inputs = run_step("STEP7-1 MonteCarlo入力作成", build_monte_carlo_inputs)
-                mark_step("STEP7-2 Monte Carlo開始")
-                if skip_monte_carlo_for_cloud:
-                    st.warning("Cloud軽量モードでは安定性優先のためMonte Carloをスキップしています。")
+                prediction_inputs = run_step("STEP7-1 入力生成", build_prediction_inputs)
+                if public_prediction_active:
+                    mark_step("STEP7-2 公開版AI予想開始")
+                    st.warning("Cloud公開版では安定性優先のためMonte Carloをスキップしています。")
                     logger.info(
-                        "Skipping Monte Carlo on Streamlit Cloud lightweight mode: horses=%s runs=%s",
+                        "Skipping Monte Carlo in public prediction mode: horses=%s cloud=%s public_only=%s",
                         len(horses),
-                        effective_monte_carlo_runs,
+                        cloud_environment,
+                        public_prediction_only,
                     )
-                    monte_carlo_prediction = build_lightweight_prediction_fallback(
-                        result,
-                        horses,
-                        seed=int(prediction_seed),
-                        reason="Streamlit Cloud lightweight mode skipped Monte Carlo",
-                    )
+                    monte_carlo_prediction = build_public_prediction_result(**prediction_inputs)
                 else:
+                    mark_step("STEP7-2 Monte Carlo開始")
                     try:
                         with st.spinner("Monte Carlo予想を実行中です..."):
-                            monte_carlo_prediction = run_monte_carlo_prediction(**monte_carlo_inputs)
+                            monte_carlo_prediction = run_monte_carlo_prediction(**prediction_inputs)
                     except Exception as exc:
                         st.session_state["prediction_failed_step"] = "STEP7-2 Monte Carlo開始"
                         logger.exception("STEP7-2 run_monte_carlo failed")
@@ -904,26 +1006,32 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
                         )
                         if lightweight_mode:
                             st.warning("Cloud軽量モードのため簡易シミュレーション結果を表示しています。")
-                            monte_carlo_prediction = build_lightweight_prediction_fallback(
-                                result,
-                                horses,
+                            monte_carlo_prediction = build_public_prediction_result(
+                                race_config=race_config_for_prediction,
+                                horses=horses,
+                                abilities=result.get("abilities") or [],
+                                pace=result.get("pace"),
+                                prediction_weights=active_weights,
+                                trend_analysis=trend_analysis,
                                 seed=int(prediction_seed),
-                                reason=f"Monte Carlo failed: {type(exc).__name__}",
                             )
                         else:
                             raise
 
-                mark_step("STEP7-3 Monte Carlo終了")
+                mark_step("STEP7-3 予想計算終了")
                 if not is_valid_monte_carlo_result(monte_carlo_prediction):
                     invalid_error = ValueError("Monte Carlo result is empty or missing required columns")
-                    logger.error("STEP7-3 invalid Monte Carlo result: %s", invalid_error)
+                    logger.error("STEP7-3 invalid prediction result: %s", invalid_error)
                     if lightweight_mode:
                         st.warning("Monte Carlo結果が空または不正形式だったため、Cloud軽量モードの簡易シミュレーション結果を表示しています。")
-                        monte_carlo_prediction = build_lightweight_prediction_fallback(
-                            result,
-                            horses,
+                        monte_carlo_prediction = build_public_prediction_result(
+                            race_config=race_config_for_prediction,
+                            horses=horses,
+                            abilities=result.get("abilities") or [],
+                            pace=result.get("pace"),
+                            prediction_weights=active_weights,
+                            trend_analysis=trend_analysis,
                             seed=int(prediction_seed),
-                            reason="Monte Carlo returned invalid result",
                         )
                     else:
                         raise invalid_error
@@ -934,7 +1042,13 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
                 result["prediction_engine_requested"] = prediction_engine_requested
                 result["prediction_engine"] = result["prediction"].get("prediction_engine", active_prediction_engine)
                 representative_trial = result["prediction"].get("representative_trial", {})
-                if representative_trial:
+                if public_prediction_active:
+                    result["single_result"] = result["prediction"].get("single_result")
+                    result["single_result_source"] = "公開版AI予想ランキング"
+                    result["race_timeline"] = []
+                    result["controlled_timeline"] = []
+                    result["representative_trial"] = {}
+                elif representative_trial:
                     result["representative_trial"] = representative_trial
                     trial_timeline = representative_trial.get("race_timeline")
                     if isinstance(trial_timeline, list) and trial_timeline:
@@ -959,11 +1073,16 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
             result["prediction_result"] = result.get("prediction")
             result["controlled_timeline"] = result.get("race_timeline", [])
             result["lightweight_mode"] = lightweight_mode
+            result["public_prediction_mode"] = public_prediction_active
             result["execution_mode"] = execution_mode
             result["use_local_database"] = use_local_database
             result["force_refresh_data"] = force_refresh_data
             result["monte_carlo_runs"] = effective_monte_carlo_runs
             result["video_generation_on_prediction"] = False
+            if public_prediction_active:
+                result["video_generation_on_prediction"] = False
+                result["controlled_timeline"] = []
+                result["race_timeline"] = []
             result["trend_data_used"] = trend_data_used
             result["skip_timeline_log"] = lightweight_mode
             result["video_duration_sec"] = effective_duration_sec
@@ -988,7 +1107,21 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
             result["race_date"] = str(log_metadata.get("race_date", ""))
             prediction_frame_for_comments = _prediction_table(result)
             analysis_frame_for_comments = result.get("horse_analysis")
-            if (
+            if public_prediction_active and isinstance(prediction_frame_for_comments, pd.DataFrame):
+                comment_columns = [
+                    column
+                    for column in ["印", "馬番", "馬名", "斤量", "脚質", "推定勝率", "推定複勝率", "評価ランク", "短評"]
+                    if column in prediction_frame_for_comments.columns
+                ]
+                result["comments_table"] = prediction_frame_for_comments[comment_columns].rename(
+                    columns={
+                        "脚質": "脚質",
+                        "推定勝率": "勝率",
+                        "推定複勝率": "複勝率",
+                        "評価ランク": "評価",
+                    }
+                )
+            elif (
                 isinstance(prediction_frame_for_comments, pd.DataFrame)
                 and not prediction_frame_for_comments.empty
                 and isinstance(analysis_frame_for_comments, pd.DataFrame)
@@ -1479,6 +1612,9 @@ def render_youtube_output_tab(debug_mode: bool = False) -> None:
     debug_mode = bool(debug_mode or st.session_state.get("debug_mode", False))
     st.write("AI予想結果から、YouTube投稿に使いやすいサムネイルと構成動画を生成します。")
     execution_mode = str(st.session_state.get("execution_mode", "軽量モード"))
+    if is_streamlit_cloud():
+        st.warning("Streamlit Cloud公開版ではYouTube動画生成を無効化しています。ローカル版をご利用ください。")
+        return
     if execution_mode == "軽量モード":
         st.warning("軽量モードではYouTube動画生成・AI読み上げ・BGM合成を無効化しています。ローカル環境で通常モード以上を選択してください。")
         return
@@ -2033,6 +2169,10 @@ def render_results(result: dict[str, object], debug_mode: bool = False, predicti
     pace_prediction = result["pace_prediction"]
     if result.get("lightweight_mode"):
         st.info("軽量モードで実行しました。予想実行時の動画生成・過去10年新規取得・音声/BGM生成は省略しています。")
+    if result.get("public_prediction_mode"):
+        st.info("公開版AI予想モード")
+        st.info("Monte Carloシミュレーション・動画生成はCloudでは無効です。")
+        st.info("高品質シミュレーションはローカル版をご利用ください。")
     if debug_mode:
         debug_rows = {
             "実行モード": result.get("execution_mode", ""),
@@ -2047,7 +2187,10 @@ def render_results(result: dict[str, object], debug_mode: bool = False, predicti
         with st.expander("実行モード・軽量化デバッグ", expanded=False):
             st.json(debug_rows)
 
-    st.subheader("今回のシミュレーション着順（AI期待値最大の代表例）")
+    if result.get("public_prediction_mode"):
+        st.subheader("公開版AI予想順位")
+    else:
+        st.subheader("今回のシミュレーション着順（AI期待値最大の代表例）")
     single_result = result.get("single_result")
     if isinstance(single_result, pd.DataFrame) and not single_result.empty:
         st.caption(str(result.get("single_result_source", "controlled_timeline final_frame")))
@@ -2094,6 +2237,12 @@ def render_results(result: dict[str, object], debug_mode: bool = False, predicti
         render_timeline_debug(result)
 
     st.subheader("レース動画")
+    if result.get("public_prediction_mode"):
+        st.info("公開版AI予想モードではレース動画を生成しません。高品質シミュレーションはローカル版をご利用ください。")
+        with st.expander("実行ログ"):
+            for line in result.get("log", []):
+                st.write(line)
+        return
     renderer_name = str(result.get("renderer_name", "marker renderer"))
     horse_display_mode = str(result.get("horse_display_mode", "marker"))
     st.info(f"使用レンダラー: {renderer_name}")
@@ -2404,6 +2553,10 @@ def render_prediction_results(
         return
 
     st.subheader("AI予想ランキング")
+    if bool(prediction.get("public_prediction_mode") or prediction.get("public_prediction")):
+        st.info("能力スコア：馬そのものの総合力")
+        st.info("今回条件適性スコア：今回のコース・展開・馬場・傾向との噛み合い")
+        st.info("AIスコア：能力スコアと今回条件適性スコアを統合した最終評価")
     sorted_table = sort_prediction_table(prediction_table, sort_by)
     show_dataframe_safe(sorted_table, width="stretch", hide_index=True)
 
