@@ -244,18 +244,21 @@ def current_memory_usage_mb() -> float | None:
 def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     st.title("競馬レースシミュレーター")
+    debug_mode = st.sidebar.checkbox("デバッグ情報を表示", value=False, key="global_debug_mode")
+    st.session_state["debug_mode"] = debug_mode
     tab_prediction, tab_result, tab_analysis, tab_youtube = st.tabs(["予想", "実結果入力", "成績分析", "YouTube出力"])
     with tab_prediction:
-        render_prediction_tab()
+        render_prediction_tab(debug_mode=debug_mode)
     with tab_result:
-        render_actual_result_tab()
+        render_actual_result_tab(debug_mode=debug_mode)
     with tab_analysis:
-        render_performance_tab()
+        render_performance_tab(debug_mode=debug_mode)
     with tab_youtube:
-        render_youtube_output_tab()
+        render_youtube_output_tab(debug_mode=debug_mode)
 
 
-def render_prediction_tab() -> None:
+def render_prediction_tab(debug_mode: bool = False) -> None:
+    debug_mode = bool(debug_mode or st.session_state.get("debug_mode", False))
     st.write("レース条件と出走馬を入力すると、近走分析、展開予測、シミュレーション、動画生成まで実行します。")
 
     st.sidebar.header("実行設定")
@@ -356,7 +359,6 @@ def render_prediction_tab() -> None:
         [30, 60, 90],
         index=1,
     )
-    debug_mode = st.sidebar.checkbox("デバッグ情報を表示", value=False)
     prediction_mode = st.sidebar.checkbox("予想モード", value=False)
     prediction_engine_requested = st.sidebar.selectbox(
         "予想エンジン",
@@ -624,9 +626,11 @@ def render_prediction_tab() -> None:
         st.info("入力後に「予想実行」を押してください。")
 
 
-def render_actual_result_tab() -> None:
+def render_actual_result_tab(debug_mode: bool = False) -> None:
+    debug_mode = bool(debug_mode or st.session_state.get("debug_mode", False))
     st.write("レース後に実結果を取得し、保存済みの予想ログと比較します。")
-    debug_mode = st.checkbox("実結果取得のデバッグ情報を表示", value=False, key="result_debug_mode")
+    result_debug_mode = st.checkbox("実結果取得のデバッグ情報を表示", value=False, key="result_debug_mode")
+    debug_mode = bool(debug_mode or result_debug_mode)
     name_col, date_col, button_col = st.columns([2, 1, 1])
     with name_col:
         race_name = st.text_input("レース名", key="result_race_name")
@@ -845,7 +849,8 @@ def render_actual_result_tab() -> None:
             st.dataframe(pd.DataFrame(latest_return.get("by_bet_type", [])), width="stretch", hide_index=True)
 
 
-def render_performance_tab() -> None:
+def render_performance_tab(debug_mode: bool = False) -> None:
+    debug_mode = bool(debug_mode or st.session_state.get("debug_mode", False))
     logs = load_evaluation_logs()
     summary = aggregate_evaluation_logs(logs)
     st.subheader("予想成績")
@@ -1027,7 +1032,8 @@ def render_prediction_report_section(result: dict[str, Any]) -> None:
         st.caption(f"Markdown: {latest_paths.get('markdown', '')} / JSON: {latest_paths.get('json', '')}")
 
 
-def render_youtube_output_tab() -> None:
+def render_youtube_output_tab(debug_mode: bool = False) -> None:
+    debug_mode = bool(debug_mode or st.session_state.get("debug_mode", False))
     st.write("AI予想結果から、YouTube投稿に使いやすいサムネイルと構成動画を生成します。")
     execution_mode = str(st.session_state.get("execution_mode", "軽量モード"))
     if execution_mode == "軽量モード":
