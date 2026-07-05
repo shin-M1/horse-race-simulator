@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import random
 from datetime import datetime
 from pathlib import Path
@@ -19,6 +20,9 @@ from race_trend_scorer import compute_race_trend_match_score
 from simulator import RaceSimulator
 from ml_model import TOP3_MODEL_PATH, WIN_MODEL_PATH, apply_ml_prediction, load_model
 from weight_optimizer import apply_prediction_weights, load_model_weights
+
+
+logger = logging.getLogger(__name__)
 
 
 PREDICTION_COLUMNS = [
@@ -79,7 +83,15 @@ PREDICTION_COLUMNS = [
 ]
 
 
-def run_monte_carlo_prediction(
+def run_monte_carlo_prediction(*args: Any, **kwargs: Any) -> dict[str, Any]:
+    try:
+        return _run_monte_carlo_prediction_impl(*args, **kwargs)
+    except Exception:
+        logger.exception("MonteCarlo prediction failed")
+        raise
+
+
+def _run_monte_carlo_prediction_impl(
     race_config: dict[str, Any] | RaceConfig,
     horses: list[dict[str, Any]] | list[HorseEntry],
     n_simulations: int = 500,

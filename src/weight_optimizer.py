@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import random
 from pathlib import Path
@@ -8,6 +9,9 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+
+
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_WEIGHTS = {
@@ -98,7 +102,15 @@ def build_training_dataset(evaluation_logs: list[dict[str, Any]]) -> pd.DataFram
     return pd.DataFrame(rows, columns=TRAINING_COLUMNS)
 
 
-def optimize_prediction_weights(
+def optimize_prediction_weights(*args: Any, **kwargs: Any) -> dict[str, Any]:
+    try:
+        return _optimize_prediction_weights_impl(*args, **kwargs)
+    except Exception:
+        logger.exception("WeightOptimizer optimization failed")
+        raise
+
+
+def _optimize_prediction_weights_impl(
     training_df: pd.DataFrame,
     metric: str = "top3_hit_rate",
     n_trials: int = 500,
@@ -167,6 +179,7 @@ def load_model_weights(path: str | Path = WEIGHTS_PATH) -> dict[str, float]:
         weights = payload.get("weights", payload)
         return normalize_weights(weights)
     except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        logger.exception("WeightOptimizer failed to load weights from %s", target)
         return dict(DEFAULT_WEIGHTS)
 
 
@@ -182,6 +195,14 @@ def normalize_weights(weights: dict[str, Any]) -> dict[str, float]:
 
 
 def apply_prediction_weights(table: pd.DataFrame, weights: dict[str, Any] | None = None) -> pd.DataFrame:
+    try:
+        return _apply_prediction_weights_impl(table, weights)
+    except Exception:
+        logger.exception("WeightOptimizer failed to apply prediction weights")
+        raise
+
+
+def _apply_prediction_weights_impl(table: pd.DataFrame, weights: dict[str, Any] | None = None) -> pd.DataFrame:
     if table.empty:
         return table.copy()
     active = normalize_weights(weights or load_model_weights())

@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
+
+
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_ELO = 1500.0
@@ -26,6 +30,18 @@ def update_pairwise_elo(
 
 
 def update_elo_from_race_result(
+    race_result: list[dict[str, Any]],
+    ratings: dict[str, float],
+    k_factor: float = K_FACTOR,
+) -> dict[str, float]:
+    try:
+        return _update_elo_from_race_result_impl(race_result, ratings, k_factor)
+    except Exception:
+        logger.exception("EloRating update failed")
+        raise
+
+
+def _update_elo_from_race_result_impl(
     race_result: list[dict[str, Any]],
     ratings: dict[str, float],
     k_factor: float = K_FACTOR,

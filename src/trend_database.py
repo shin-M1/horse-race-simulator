@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any, Callable
 
 from cache_utils import DATA_DIR, is_fresh, read_json, safe_key, utc_now_iso, write_json
+
+
+logger = logging.getLogger(__name__)
 
 
 TREND_DB_DIR = DATA_DIR / "trend_database"
@@ -50,6 +54,7 @@ def get_or_build_trend_data(
     try:
         built = builder_func()
     except Exception:
+        logger.exception("TrendDatabase builder failed: race_name=%s venue=%s distance=%s", race_name, venue, distance)
         if cached and not force_refresh:
             cached["_database_status"] = "stale_hit"
             return cached

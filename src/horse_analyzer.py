@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field, replace
 from typing import Any, Protocol
@@ -12,6 +13,9 @@ from elo_rating import normalize_elo_score as normalize_persisted_elo_score
 from errors import RaceDataFetchError
 from race_config import HorseEntry, calculate_weight_penalty
 from utils import clamp, normalize_track_condition, safe_mean, safe_std
+
+
+logger = logging.getLogger(__name__)
 
 
 STYLE_KEYS = ["逃げ", "先行", "差し", "追込"]
@@ -1365,6 +1369,7 @@ class HorseAnalyzer:
         except RaceDataFetchError:
             raise
         except Exception as exc:
+            logger.exception("HorseAnalyzer failed to fetch recent results for %s", horse.horse_name)
             debug_records = self.provider.get_fetch_debug() if hasattr(self.provider, "get_fetch_debug") else []
             raise RaceDataFetchError(
                 f"{horse.horse_name} の近走データ取得に失敗しました: {exc}",
@@ -1553,6 +1558,13 @@ class HorseAnalyzer:
         )
 
     def analyze_many(self, horses: list[HorseEntry]) -> list[HorseAbility]:
+        try:
+            return self._analyze_many_impl(horses)
+        except Exception:
+            logger.exception("HorseAnalyzer.analyze_many failed")
+            raise
+
+    def _analyze_many_impl(self, horses: list[HorseEntry]) -> list[HorseAbility]:
         abilities = [self.analyze(horse) for horse in horses]
         elo_rows: list[dict[str, Any]] = []
         for ability in abilities:
