@@ -4,8 +4,10 @@ import importlib
 import logging
 import math
 import os
+import random
 import sys
 import time
+import traceback
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -195,7 +197,7 @@ def is_streamlit_cloud() -> bool:
 def execution_mode_settings(execution_mode: str) -> dict[str, Any]:
     if execution_mode == "軽量モード":
         return {
-            "monte_carlo_runs": 50,
+            "monte_carlo_runs": 10,
             "video_duration_sec": 15,
             "video_width": 854,
             "video_height": 480,
@@ -203,8 +205,10 @@ def execution_mode_settings(execution_mode: str) -> dict[str, Any]:
             "enable_youtube_video": False,
             "enable_narration": False,
             "enable_bgm": False,
+            "generate_video": False,
             "use_cached_trends_only": True,
             "store_trial_timelines": False,
+            "store_simulation_history": False,
             "save_timeline_csv": False,
         }
     if execution_mode == "通常モード":
@@ -217,8 +221,10 @@ def execution_mode_settings(execution_mode: str) -> dict[str, Any]:
             "enable_youtube_video": True,
             "enable_narration": True,
             "enable_bgm": True,
+            "generate_video": True,
             "use_cached_trends_only": True,
             "store_trial_timelines": True,
+            "store_simulation_history": True,
             "save_timeline_csv": True,
         }
     return {
@@ -230,8 +236,10 @@ def execution_mode_settings(execution_mode: str) -> dict[str, Any]:
         "enable_youtube_video": True,
         "enable_narration": True,
         "enable_bgm": True,
+        "generate_video": True,
         "use_cached_trends_only": False,
         "store_trial_timelines": True,
+        "store_simulation_history": True,
         "save_timeline_csv": True,
     }
 
@@ -264,6 +272,236 @@ def render_prediction_step_logs(step_logs: list[str], expanded: bool = False) ->
     with st.expander("実行ログ", expanded=expanded):
         for step in step_logs:
             st.write(step)
+
+
+def is_valid_monte_carlo_result(prediction: Any) -> bool:
+    if not isinstance(prediction, dict):
+        return False
+    prediction_table = prediction.get("prediction_table")
+    if not isinstance(prediction_table, pd.DataFrame) or prediction_table.empty:
+        return False
+    required_columns = {"馬番", "馬名", "win_rate", "top3_rate"}
+    return required_columns.issubset(set(prediction_table.columns))
+
+
+def render_monte_carlo_failure_debug(
+    exc: BaseException,
+    *,
+    horse_count: int,
+    runs: int,
+    execution_mode: str,
+    store_trial_timelines: bool,
+    store_simulation_history: bool,
+) -> None:
+    st.error("Monte Carlo予想の実行中にエラーが発生しました。")
+    st.error(type(exc).__name__)
+    st.json(
+        {
+            "入力馬数": int(horse_count),
+            "runs数": int(runs),
+            "execution_mode": execution_mode,
+            "timeline保存ON/OFF": bool(store_trial_timelines),
+            "simulation_history保存ON/OFF": bool(store_simulation_history),
+        }
+    )
+    st.code(traceback.format_exc())
+
+
+def build_lightweight_prediction_fallback(
+    result: dict[str, Any],
+    horses: list[dict[str, Any]],
+    *,
+    seed: int | None,
+    reason: str,
+) -> dict[str, Any]:
+    rng = random.Random(seed)
+    abilities = list(result.get("abilities") or [])
+    mark_order = ["◎", "○", "▲", "△", "☆"]
+    horse_meta_by_number = {
+        int(horse.get("horse_number", horse.get("馬番", index + 1)) or index + 1): horse
+        for index, horse in enumerate(horses)
+        if isinstance(horse, dict)
+    }
+
+    source_rows: list[dict[str, Any]] = []
+    if abilities:
+        for ability in abilities:
+            source_rows.append(
+                {
+                    "horse_number": int(getattr(ability, "horse_number", 0) or 0),
+                    "horse_name": str(getattr(ability, "horse_name", "")),
+                    "frame": int(getattr(ability, "frame", 0) or 0),
+                    "carried_weight": float(getattr(ability, "carried_weight", 56.0) or 56.0),
+                    "primary_running_style": str(getattr(ability, "primary_running_style", "")),
+                    "actual_running_style": str(getattr(ability, "primary_running_style", "")),
+                    "horse_ability_score": float(getattr(ability, "horse_ability_score", 50.0) or 50.0),
+                    "race_power": float(getattr(ability, "race_power", 50.0) or 50.0),
+                    "race_strength_score": float(getattr(ability, "race_strength_score", 50.0) or 50.0),
+                    "race_strength_adjusted_score": float(getattr(ability, "race_strength_adjusted_score", 50.0) or 50.0),
+                    "elo_rating": float(getattr(ability, "elo_rating", 1500.0) or 1500.0),
+                    "normalized_elo_score": float(getattr(ability, "normalized_elo_score", 50.0) or 50.0),
+                    "relative_agari_score": float(getattr(ability, "relative_agari_score", 50.0) or 50.0),
+                    "late_kick_score": float(getattr(ability, "late_kick_score", 50.0) or 50.0),
+                    "course_fit_score": float(getattr(ability, "course_fit_score", 50.0) or 50.0),
+                    "pace_fit_score": float(getattr(ability, "pace_fit_score", 50.0) or 50.0),
+                    "jockey_score": float(getattr(ability, "jockey_score", 50.0) or 50.0),
+                    "track_bias_fit_score": float(getattr(ability, "track_bias_fit_score", 50.0) or 50.0),
+                    "mud_aptitude": float(getattr(ability, "mud_aptitude", 50.0) or 50.0),
+                    "finish_score": float(getattr(ability, "finish_score", 50.0) or 50.0),
+                    "margin_score": float(getattr(ability, "margin_score", 50.0) or 50.0),
+                    "time_score": float(getattr(ability, "time_score", 50.0) or 50.0),
+                    "last3f_score": float(getattr(ability, "last3f_score", 50.0) or 50.0),
+                    "weight_penalty": float(getattr(ability, "weight_penalty", 0.0) or 0.0),
+                }
+            )
+    else:
+        for index, horse in enumerate(horses):
+            if not isinstance(horse, dict):
+                continue
+            source_rows.append(
+                {
+                    "horse_number": int(horse.get("horse_number", horse.get("馬番", index + 1)) or index + 1),
+                    "horse_name": str(horse.get("horse_name", horse.get("馬名", ""))),
+                    "frame": int(horse.get("frame", horse.get("枠順", 0)) or 0),
+                    "carried_weight": float(horse.get("carried_weight", horse.get("斤量", 56.0)) or 56.0),
+                    "primary_running_style": "",
+                    "actual_running_style": "",
+                    "horse_ability_score": 50.0,
+                    "race_power": 50.0,
+                    "race_strength_score": 50.0,
+                    "race_strength_adjusted_score": 50.0,
+                    "elo_rating": 1500.0,
+                    "normalized_elo_score": 50.0,
+                    "relative_agari_score": 50.0,
+                    "late_kick_score": 50.0,
+                    "course_fit_score": 50.0,
+                    "pace_fit_score": 50.0,
+                    "jockey_score": 50.0,
+                    "track_bias_fit_score": 50.0,
+                    "mud_aptitude": 50.0,
+                    "finish_score": 50.0,
+                    "margin_score": 50.0,
+                    "time_score": 50.0,
+                    "last3f_score": 50.0,
+                    "weight_penalty": 0.0,
+                }
+            )
+
+    for source in source_rows:
+        raw_score = (
+            source["horse_ability_score"] * 0.34
+            + source["race_power"] * 0.18
+            + source["late_kick_score"] * 0.16
+            + source["course_fit_score"] * 0.10
+            + source["pace_fit_score"] * 0.10
+            + source["normalized_elo_score"] * 0.08
+            + source["jockey_score"] * 0.04
+            + rng.uniform(-1.5, 1.5)
+        )
+        source["prediction_score"] = max(0.0, min(100.0, raw_score))
+
+    source_rows.sort(key=lambda row: (row["prediction_score"], row["horse_ability_score"]), reverse=True)
+    horse_count = max(1, len(source_rows))
+    rows: list[dict[str, Any]] = []
+    for rank_index, source in enumerate(source_rows, start=1):
+        win_rate = max(0.01, min(0.45, (horse_count - rank_index + 1) / (horse_count * horse_count)))
+        top2_rate = max(win_rate, min(0.75, win_rate + (horse_count - rank_index + 1) / (horse_count * 3.0)))
+        top3_rate = max(top2_rate, min(0.90, top2_rate + (horse_count - rank_index + 1) / (horse_count * 3.5)))
+        rows.append(
+            {
+                "印": mark_order[rank_index - 1] if rank_index <= min(5, horse_count) else "",
+                "馬番": int(source["horse_number"]),
+                "馬名": source["horse_name"],
+                "枠順": int(source["frame"]),
+                "斤量": round(float(source["carried_weight"]), 1),
+                "primary_running_style": source["primary_running_style"],
+                "actual_running_style": source["actual_running_style"],
+                "win_rate": round(float(win_rate), 4),
+                "top2_rate": round(float(top2_rate), 4),
+                "top3_rate": round(float(top3_rate), 4),
+                "avg_finish": round(float(rank_index + rng.uniform(-0.08, 0.08)), 3),
+                "median_finish": rank_index,
+                "worst_finish": min(horse_count, rank_index + 2),
+                "best_finish": max(1, rank_index - 2),
+                "avg_time": 0.0,
+                "prediction_score": round(float(source["prediction_score"]), 2),
+                "prediction_engine": "cloud_lightweight_fallback",
+                "horse_ability_score": round(float(source["horse_ability_score"]), 2),
+                "race_power": round(float(source["race_power"]), 2),
+                "race_strength_score": round(float(source["race_strength_score"]), 2),
+                "race_strength_adjusted_score": round(float(source["race_strength_adjusted_score"]), 2),
+                "elo_rating": round(float(source["elo_rating"]), 2),
+                "normalized_elo_score": round(float(source["normalized_elo_score"]), 2),
+                "elo_score": round(float(source["normalized_elo_score"]), 2),
+                "relative_agari_score": round(float(source["relative_agari_score"]), 2),
+                "late_kick_score": round(float(source["late_kick_score"]), 2),
+                "course_fit_score": round(float(source["course_fit_score"]), 2),
+                "pace_fit_score": round(float(source["pace_fit_score"]), 2),
+                "jockey_score": round(float(source["jockey_score"]), 2),
+                "track_bias_fit_score": round(float(source["track_bias_fit_score"]), 2),
+                "race_trend_score": 50.0,
+                "weight_penalty": round(float(source["weight_penalty"]), 2),
+                "mud_aptitude": round(float(source["mud_aptitude"]), 2),
+                "finish_score": round(float(source["finish_score"]), 2),
+                "margin_score": round(float(source["margin_score"]), 2),
+                "time_score": round(float(source["time_score"]), 2),
+                "last3f_score": round(float(source["last3f_score"]), 2),
+                "carried_weight": round(float(source["carried_weight"]), 1),
+                "frame": int(source["frame"]),
+                "horse_number": int(source["horse_number"]),
+                "final_prediction_score": round(float(source["prediction_score"]), 2),
+                "score": round(float(source["prediction_score"]), 2),
+                "予想根拠": f"Cloud軽量モードの簡易予想です。{reason}",
+            }
+        )
+
+    prediction_table = pd.DataFrame(rows)
+    result_rows = [
+        {
+            "着順": index,
+            "馬番": int(row["馬番"]),
+            "馬名": row["馬名"],
+            "枠順": int(row["枠順"]),
+            "斤量": round(float(row["斤量"]), 1),
+            "actual_running_style": row["actual_running_style"],
+            "position_m": round(1000.0 - (index - 1) * 1.2, 3),
+            "gap_from_winner": round((index - 1) * 1.2, 3),
+        }
+        for index, row in enumerate(rows, start=1)
+    ]
+    result_df = pd.DataFrame(result_rows)
+    representative_trial = {
+        "trial_index": None,
+        "seed": seed,
+        "pace": "fallback",
+        "ranking": result_df,
+        "race_timeline": [],
+        "result_df": result_df,
+        "ranking_distance": None,
+        "top5_overlap_count": min(5, len(result_df)),
+        "representative_value_score": None,
+        "top5_horses_in_selected_trial": [int(row["馬番"]) for row in rows[:5]],
+        "fallback": True,
+    }
+    return {
+        "prediction_table": prediction_table,
+        "simulation_trials": [],
+        "representative_trial": representative_trial,
+        "simulation_logs": [
+            f"Cloud lightweight fallback used: {reason}",
+            "Monte Carlo history/timeline generation was skipped.",
+        ],
+        "summary": {
+            "n_simulations": 0,
+            "seed": seed,
+            "saved_paths": {},
+            "prediction_engine": "cloud_lightweight_fallback",
+            "fallback_reason": reason,
+        },
+        "prediction_engine": "cloud_lightweight_fallback",
+        "fallback": True,
+        "fallback_reason": reason,
+    }
 
 
 def is_streamlit_control_exception(exc: BaseException) -> bool:
@@ -616,23 +854,66 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
                     ],
                 )
 
-                def execute_monte_carlo_prediction() -> dict[str, Any]:
-                    with st.spinner("Monte Carlo予想を実行中です..."):
-                        return run_monte_carlo_prediction(
-                            race_config=race_config_for_prediction,
-                            horses=horses,
-                            n_simulations=effective_monte_carlo_runs,
-                            seed=int(prediction_seed),
-                            abilities=result.get("abilities"),
-                            pace=result.get("pace"),
-                            output_dir=str(OUTPUT_DIR),
-                            prediction_engine=active_prediction_engine,
-                            prediction_weights=active_weights,
-                            trend_analysis=trend_analysis,
-                            store_trial_timelines=bool(mode_settings["store_trial_timelines"]),
-                        )
+                def build_monte_carlo_inputs() -> dict[str, Any]:
+                    return {
+                        "race_config": race_config_for_prediction,
+                        "horses": horses,
+                        "n_simulations": effective_monte_carlo_runs,
+                        "seed": int(prediction_seed),
+                        "abilities": result.get("abilities"),
+                        "pace": result.get("pace"),
+                        "output_dir": str(OUTPUT_DIR),
+                        "prediction_engine": active_prediction_engine,
+                        "prediction_weights": active_weights,
+                        "trend_analysis": trend_analysis,
+                        "store_trial_timelines": bool(mode_settings["store_trial_timelines"]),
+                        "store_simulation_history": bool(mode_settings.get("store_simulation_history", True)),
+                    }
 
-                result["prediction"] = run_step("STEP7 Simulation", execute_monte_carlo_prediction)
+                monte_carlo_inputs = run_step("STEP7-1 MonteCarlo入力作成", build_monte_carlo_inputs)
+                mark_step("STEP7-2 run_monte_carlo開始")
+                try:
+                    with st.spinner("Monte Carlo予想を実行中です..."):
+                        monte_carlo_prediction = run_monte_carlo_prediction(**monte_carlo_inputs)
+                except Exception as exc:
+                    st.session_state["prediction_failed_step"] = "STEP7-2 run_monte_carlo開始"
+                    logger.exception("STEP7-2 run_monte_carlo failed")
+                    render_monte_carlo_failure_debug(
+                        exc,
+                        horse_count=len(horses),
+                        runs=effective_monte_carlo_runs,
+                        execution_mode=execution_mode,
+                        store_trial_timelines=bool(mode_settings["store_trial_timelines"]),
+                        store_simulation_history=bool(mode_settings.get("store_simulation_history", True)),
+                    )
+                    if lightweight_mode:
+                        st.warning("Cloud軽量モードのため簡易シミュレーション結果を表示しています。")
+                        monte_carlo_prediction = build_lightweight_prediction_fallback(
+                            result,
+                            horses,
+                            seed=int(prediction_seed),
+                            reason=f"Monte Carlo failed: {type(exc).__name__}",
+                        )
+                    else:
+                        raise
+
+                mark_step("STEP7-3 run_monte_carlo完了")
+                if not is_valid_monte_carlo_result(monte_carlo_prediction):
+                    invalid_error = ValueError("Monte Carlo result is empty or missing required columns")
+                    logger.error("STEP7-3 invalid Monte Carlo result: %s", invalid_error)
+                    if lightweight_mode:
+                        st.warning("Monte Carlo結果が空または不正形式だったため、Cloud軽量モードの簡易シミュレーション結果を表示しています。")
+                        monte_carlo_prediction = build_lightweight_prediction_fallback(
+                            result,
+                            horses,
+                            seed=int(prediction_seed),
+                            reason="Monte Carlo returned invalid result",
+                        )
+                    else:
+                        raise invalid_error
+
+                result["prediction"] = monte_carlo_prediction
+                mark_step("STEP7-4 結果整形")
                 _merge_prediction_trend_columns(result)
                 result["prediction_engine_requested"] = prediction_engine_requested
                 result["prediction_engine"] = result["prediction"].get("prediction_engine", active_prediction_engine)
@@ -643,7 +924,15 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
                     if isinstance(trial_timeline, list) and trial_timeline:
                         result["race_timeline"] = trial_timeline
                     result["single_result"] = representative_trial.get("result_df")
-                    result["single_result_source"] = "Monte Carlo trial with highest AI expected value"
+                    result["single_result_source"] = (
+                        "Cloud lightweight fallback"
+                        if result["prediction"].get("fallback")
+                        else "Monte Carlo trial with highest AI expected value"
+                    )
+                mark_step("STEP7-5 表示用DataFrame作成")
+                prediction_table_for_display = _prediction_table(result)
+                if not isinstance(prediction_table_for_display, pd.DataFrame) or prediction_table_for_display.empty:
+                    raise ValueError("AI予想ランキングの表示用DataFrameを作成できませんでした。")
             mark_step("STEP8 Result")
             if not isinstance(result.get("single_result"), pd.DataFrame):
                 result["single_result"] = build_single_race_result_from_timeline(

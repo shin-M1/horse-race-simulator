@@ -2,12 +2,18 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import random
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
+
+try:
+    import numpy as np
+except Exception:  # pragma: no cover - numpy is a project dependency, but keep import defensive.
+    np = None  # type: ignore[assignment]
 
 from course_db import CourseDB, get_course_bias, get_track_bias_fit_score
 from horse_analyzer import HorseAbility, HorseAnalyzer
@@ -83,6 +89,38 @@ PREDICTION_COLUMNS = [
 ]
 
 
+def _to_python_standard(value: Any) -> Any:
+    if isinstance(value, pd.DataFrame):
+        return value
+    if isinstance(value, pd.Series):
+        return [_to_python_standard(item) for item in value.tolist()]
+    if np is not None:
+        if isinstance(value, np.integer):
+            return int(value)
+        if isinstance(value, np.floating):
+            numeric = float(value)
+            return None if math.isnan(numeric) else numeric
+        if isinstance(value, np.ndarray):
+            return [_to_python_standard(item) for item in value.tolist()]
+        if isinstance(value, np.bool_):
+            return bool(value)
+    if isinstance(value, float) and math.isnan(value):
+        return None
+    if isinstance(value, dict):
+        return {str(key): _to_python_standard(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_to_python_standard(item) for item in value]
+    return value
+
+
+def _make_dataframe_python_safe(frame: pd.DataFrame) -> pd.DataFrame:
+    safe_frame = frame.copy()
+    for column in safe_frame.columns:
+        if safe_frame[column].dtype == "object":
+            safe_frame[column] = safe_frame[column].map(_to_python_standard)
+    return safe_frame
+
+
 def run_monte_carlo_prediction(*args: Any, **kwargs: Any) -> dict[str, Any]:
     try:
         return _run_monte_carlo_prediction_impl(*args, **kwargs)
@@ -105,6 +143,8 @@ def _run_monte_carlo_prediction_impl(
     win_model_path: str | Path = WIN_MODEL_PATH,
     trend_analysis: dict[str, Any] | None = None,
     store_trial_timelines: bool = True,
+    store_simulation_history: bool = True,
+    max_stored_trials: int | None = None,
 ) -> dict[str, Any]:
     """Run repeated race simulations and aggregate finish-position probabilities."""
     raw_race_config = race_config
@@ -146,17 +186,21 @@ def _run_monte_carlo_prediction_impl(
         trial_seed = rng.randrange(1, 2**31 - 1)
         trial_pace = _perturb_pace(pace, random.Random(trial_seed + 17))
         result = simulator.simulate(config=config, abilities=abilities, pace=trial_pace, seed=trial_seed)
-        result_df = build_single_race_result_from_timeline(result.race_timeline, horse_inputs)
-        simulation_trials.append(
-            {
-                "trial_index": trial_index,
-                "seed": trial_seed,
-                "pace": trial_pace.pace,
-                "ranking": result.ranking.copy(),
-                "race_timeline": result.race_timeline if store_trial_timelines else [],
-                "result_df": result_df,
-            }
+        should_store_trial = store_simulation_history and (
+            max_stored_trials is None or len(simulation_trials) < max(0, int(max_stored_trials))
         )
+        if should_store_trial:
+            result_df = build_single_race_result_from_timeline(result.race_timeline, horse_inputs)
+            simulation_trials.append(
+                {
+                    "trial_index": int(trial_index),
+                    "seed": int(trial_seed),
+                    "pace": str(trial_pace.pace),
+                    "ranking": _make_dataframe_python_safe(result.ranking.copy()),
+                    "race_timeline": _to_python_standard(result.race_timeline) if store_trial_timelines else [],
+                    "result_df": _make_dataframe_python_safe(result_df),
+                }
+            )
         for _, row in result.ranking.iterrows():
             horse_number = int(row["horse_number"])
             aggregates[horse_number]["finishes"].append(int(row["rank"]))
@@ -178,7 +222,11 @@ def _run_monte_carlo_prediction_impl(
         else:
             prediction_table = apply_ml_prediction(prediction_table, top3_model, win_model)
     prediction_table["prediction_engine"] = active_engine
-    representative_trial = select_highest_expected_value_trial(prediction_table, simulation_trials)
+    representative_trial = (
+        select_highest_expected_value_trial(prediction_table, simulation_trials)
+        if simulation_trials
+        else _representative_trial_from_prediction_table(prediction_table, seed)
+    )
     saved_paths = _save_prediction_outputs(
         prediction_table=prediction_table,
         config=config,
@@ -196,15 +244,17 @@ def _run_monte_carlo_prediction_impl(
             "representative_value_score": representative_trial.get("representative_value_score"),
             "top5_horses_in_selected_trial": representative_trial.get("top5_horses_in_selected_trial", []),
             "prediction_engine": active_engine,
+            "store_simulation_history": bool(store_simulation_history),
+            "store_trial_timelines": bool(store_trial_timelines),
         }
     )
     logs.append(f"Prediction CSV saved: {saved_paths['prediction_table']}")
     return {
-        "prediction_table": prediction_table,
+        "prediction_table": _make_dataframe_python_safe(prediction_table),
         "simulation_trials": simulation_trials,
-        "representative_trial": representative_trial,
+        "representative_trial": _to_python_standard(representative_trial),
         "simulation_logs": logs,
-        "summary": summary,
+        "summary": _to_python_standard(summary),
         "prediction_engine": active_engine,
     }
 
@@ -338,6 +388,67 @@ def _trial_order(trial: dict[str, Any]) -> list[int]:
         rows.sort(key=lambda row: int(row.get("rank", row.get("着順", 999)) or 999))
         return [int(row.get("horse_number", row.get("馬番", 0)) or 0) for row in rows if row.get("horse_number", row.get("馬番"))]
     return []
+
+
+def _representative_trial_from_prediction_table(prediction_table: pd.DataFrame, seed: int | None) -> dict[str, Any]:
+    if prediction_table.empty:
+        return {
+            "trial_index": None,
+            "seed": seed,
+            "pace": "prediction_order",
+            "ranking": pd.DataFrame(),
+            "race_timeline": [],
+            "result_df": pd.DataFrame(),
+            "history_stored": False,
+        }
+    sort_specs = [
+        ("prediction_score", False),
+        ("win_rate", False),
+        ("top3_rate", False),
+        ("avg_finish", True),
+    ]
+    sort_columns = [column for column, _ in sort_specs if column in prediction_table.columns]
+    ascending = [is_ascending for column, is_ascending in sort_specs if column in prediction_table.columns]
+    sorted_table = (
+        prediction_table.sort_values(sort_columns, ascending=ascending).reset_index(drop=True)
+        if sort_columns
+        else prediction_table.reset_index(drop=True)
+    )
+    rows: list[dict[str, Any]] = []
+    for rank, row in enumerate(sorted_table.to_dict("records"), start=1):
+        horse_number = int(row.get("horse_number", row.get("馬番", 0)) or 0)
+        rows.append(
+            {
+                "rank": rank,
+                "着順": rank,
+                "horse_number": horse_number,
+                "馬番": horse_number,
+                "horse_name": str(row.get("馬名", row.get("horse_name", ""))),
+                "馬名": str(row.get("馬名", row.get("horse_name", ""))),
+                "frame": int(row.get("frame", row.get("枠順", 0)) or 0),
+                "枠順": int(row.get("frame", row.get("枠順", 0)) or 0),
+                "carried_weight": float(row.get("carried_weight", row.get("斤量", 56.0)) or 56.0),
+                "斤量": float(row.get("carried_weight", row.get("斤量", 56.0)) or 56.0),
+                "actual_running_style": str(row.get("actual_running_style", row.get("primary_running_style", ""))),
+                "position_m": round(1000.0 - (rank - 1) * 1.2, 3),
+                "gap_from_winner": round((rank - 1) * 1.2, 3),
+            }
+        )
+    result_df = pd.DataFrame(rows)[["着順", "馬番", "馬名", "枠順", "斤量", "actual_running_style", "position_m", "gap_from_winner"]]
+    ranking = pd.DataFrame(rows)
+    return {
+        "trial_index": None,
+        "seed": seed,
+        "pace": "prediction_order",
+        "ranking": ranking,
+        "race_timeline": [],
+        "result_df": result_df,
+        "ranking_distance": None,
+        "top5_overlap_count": min(5, len(result_df)),
+        "representative_value_score": None,
+        "top5_horses_in_selected_trial": [int(value) for value in result_df["馬番"].head(5).tolist()],
+        "history_stored": False,
+    }
 
 
 def _first_existing_column(table: pd.DataFrame, candidates: list[str]) -> str | None:
@@ -676,11 +787,13 @@ def _save_prediction_outputs(
     pd.DataFrame([horse.to_dict() for horse in horses]).to_csv(horse_inputs_csv, index=False, encoding="utf-8-sig")
     metadata_json.write_text(
         json.dumps(
-            {
+            _to_python_standard(
+                {
                 "timestamp": timestamp,
                 "race_config": config.to_dict(),
                 "horse_inputs": [horse.to_dict() for horse in horses],
-            },
+                }
+            ),
             ensure_ascii=False,
             indent=2,
         ),
