@@ -256,7 +256,14 @@ def is_debug_enabled(debug_mode: bool = False) -> bool:
 
 def prediction_step(message: str) -> None:
     logger.info(message)
-    st.write(message)
+
+
+def render_prediction_step_logs(step_logs: list[str], expanded: bool = False) -> None:
+    if not step_logs:
+        return
+    with st.expander("実行ログ", expanded=expanded):
+        for step in step_logs:
+            st.write(step)
 
 
 def is_streamlit_control_exception(exc: BaseException) -> bool:
@@ -487,58 +494,102 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
                     st.exception(exc)
 
     submitted = st.button("予想実行", type="primary", width="stretch")
+    if not submitted:
+        st.session_state["prediction_run_in_progress"] = False
     if submitted:
-        started_at = time.perf_counter()
-        prediction_step("STEP1 開始")
-        validation = validate_inputs(race_config, horses)
-        if not validation.is_valid:
-            for error in validation.errors:
-                st.error(error)
+        if st.session_state.get("prediction_run_in_progress"):
+            st.warning("予想処理を実行中です。完了するまでお待ちください。")
             st.stop()
+        st.session_state["prediction_run_in_progress"] = True
+        st.session_state["prediction_step_logs"] = []
+        st.session_state.pop("prediction_failed_step", None)
+        started_at = time.perf_counter()
+        progress_area = st.empty()
+        step_logs: list[str] = []
+        current_step = {"name": ""}
+
+        def mark_step(name: str) -> None:
+            current_step["name"] = name
+            step_logs.append(name)
+            st.session_state["prediction_step_logs"] = list(step_logs)
+            prediction_step(name)
+            if prediction_mode:
+                progress_area.info(f"実行中: {name}")
+
+        def run_step(name: str, func: Any) -> Any:
+            mark_step(name)
+            try:
+                return func()
+            except Exception as exc:
+                if is_streamlit_control_exception(exc):
+                    raise
+                st.session_state["prediction_failed_step"] = name
+                logger.exception("%s failed", name)
+                if prediction_mode:
+                    progress_area.error(f"失敗: {name}")
+                raise
+
+        def show_current_step_failure() -> None:
+            failed_step = str(st.session_state.get("prediction_failed_step") or current_step.get("name") or "不明")
+            if prediction_mode:
+                progress_area.error(f"失敗: {failed_step}")
+            st.error(f"失敗したSTEP: {failed_step}")
+            render_prediction_step_logs(step_logs, expanded=True)
 
         st.session_state.pop("simulation_result", None)
         try:
-            prediction_step("STEP4 HorseAnalyzer")
-            prediction_step("STEP7 Simulation")
-            with st.spinner("直近5走取得、分析、予想を実行中です..."):
-                result = run_race_simulation(
-                    race_config=race_config,
-                    horses=horses,
-                    output_dir=str(OUTPUT_DIR),
-                    provider_module=provider_module.strip() or None,
-                    provider_factory=provider_factory.strip() or None,
-                    make_gif=False,
-                    make_mp4=False,
-                    animation_mode="none",
-                    animation_seconds=float(effective_duration_sec),
-                    video_format=video_format_label,
-                    timeline_mode=timeline_mode,
-                    seed=42,
-                    make_animation=False,
-                    save_timeline_csv=bool(mode_settings["save_timeline_csv"]),
-                    use_local_database=use_local_database,
-                    force_refresh_data=force_refresh_data,
-                )
-            ensure_recent_races_exist(result)
+            validation = run_step("STEP1 入力確認", lambda: validate_inputs(race_config, horses))
+            if not validation.is_valid:
+                for error in validation.errors:
+                    st.error(error)
+                render_prediction_step_logs(step_logs, expanded=True)
+                st.stop()
+
+            def execute_base_simulation() -> dict[str, Any]:
+                with st.spinner("直近5走取得、分析、予想を実行中です..."):
+                    return run_race_simulation(
+                        race_config=race_config,
+                        horses=horses,
+                        output_dir=str(OUTPUT_DIR),
+                        provider_module=provider_module.strip() or None,
+                        provider_factory=provider_factory.strip() or None,
+                        make_gif=False,
+                        make_mp4=False,
+                        animation_mode="none",
+                        animation_seconds=float(effective_duration_sec),
+                        video_format=video_format_label,
+                        timeline_mode=timeline_mode,
+                        seed=42,
+                        make_animation=False,
+                        save_timeline_csv=bool(mode_settings["save_timeline_csv"]),
+                        use_local_database=use_local_database,
+                        force_refresh_data=force_refresh_data,
+                    )
+
+            result = run_step("STEP2 データ取得", execute_base_simulation)
+            run_step("STEP3 HorseAnalyzer", lambda: ensure_recent_races_exist(result))
             effective_monte_carlo_runs = 0
             trend_data_used = False
+            trend_analysis = None
             if prediction_mode:
-                prediction_step("STEP3 Trend")
-                trend_analysis = None
-                trend_name = str(race_config.get("race_name") or race_name_input.strip())
-                trend_venue = str(race_config.get("course") or "")
-                try:
-                    trend_distance = int(race_config.get("distance") or 0)
-                except (TypeError, ValueError):
-                    trend_distance = 0
-                if trend_name and trend_venue and trend_distance > 0:
+                def load_trend_step() -> tuple[dict[str, Any] | None, bool]:
+                    local_trend_analysis = None
+                    local_trend_data_used = False
+                    trend_name = str(race_config.get("race_name") or race_name_input.strip())
+                    trend_venue = str(race_config.get("course") or "")
+                    try:
+                        trend_distance = int(race_config.get("distance") or 0)
+                    except (TypeError, ValueError):
+                        trend_distance = 0
+                    if not (trend_name and trend_venue and trend_distance > 0):
+                        return None, False
                     try:
                         trend_database = cached_same_race_trend_database(trend_name, trend_venue, trend_distance)
                         if isinstance(trend_database, dict):
-                            trend_analysis = analyze_same_race_trend_database(trend_database)
-                            trend_data_used = True
+                            local_trend_analysis = analyze_same_race_trend_database(trend_database)
+                            local_trend_data_used = True
                             result["same_race_trend_database"] = trend_database
-                            result["same_race_trend_analysis"] = trend_analysis
+                            result["same_race_trend_analysis"] = local_trend_analysis
                             result.setdefault("log", []).append(
                                 f"cached same race trend rows={trend_database.get('row_count', 0)}"
                             )
@@ -546,18 +597,28 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
                             st.info("過去傾向データが未作成のため、今回は中立評価で予想します。必要な場合はローカル環境で傾向データを作成してください。")
                             result.setdefault("log", []).append("same race trend cache missing: neutral trend score")
                     except Exception:
-                        logger.exception("STEP3 Trend failed")
+                        logger.exception("STEP4 Trend failed")
                         raise
+                    return local_trend_analysis, local_trend_data_used
+
+                trend_analysis, trend_data_used = run_step("STEP4 Trend", load_trend_step)
                 race_config_for_prediction = dict(race_config)
                 if isinstance(trend_analysis, dict):
                     race_config_for_prediction["same_race_trend_analysis"] = trend_analysis
                 effective_monte_carlo_runs = min(int(n_simulations), int(mode_settings["monte_carlo_runs"]))
-                prediction_step("STEP5 WeightOptimizer")
-                prediction_step("STEP6 Elo")
-                prediction_step("STEP2 MonteCarlo")
-                with st.spinner("Monte Carlo予想を実行中です..."):
-                    try:
-                        result["prediction"] = run_monte_carlo_prediction(
+
+                active_weights = run_step("STEP5 WeightOptimizer", lambda: current_weights)
+                run_step(
+                    "STEP6 Elo",
+                    lambda: [
+                        getattr(ability, "normalized_elo_score", None)
+                        for ability in (result.get("abilities") or [])
+                    ],
+                )
+
+                def execute_monte_carlo_prediction() -> dict[str, Any]:
+                    with st.spinner("Monte Carlo予想を実行中です..."):
+                        return run_monte_carlo_prediction(
                             race_config=race_config_for_prediction,
                             horses=horses,
                             n_simulations=effective_monte_carlo_runs,
@@ -566,13 +627,12 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
                             pace=result.get("pace"),
                             output_dir=str(OUTPUT_DIR),
                             prediction_engine=active_prediction_engine,
-                            prediction_weights=current_weights,
+                            prediction_weights=active_weights,
                             trend_analysis=trend_analysis,
                             store_trial_timelines=bool(mode_settings["store_trial_timelines"]),
                         )
-                    except Exception:
-                        logger.exception("STEP2 MonteCarlo failed")
-                        raise
+
+                result["prediction"] = run_step("STEP7 Simulation", execute_monte_carlo_prediction)
                 _merge_prediction_trend_columns(result)
                 result["prediction_engine_requested"] = prediction_engine_requested
                 result["prediction_engine"] = result["prediction"].get("prediction_engine", active_prediction_engine)
@@ -584,7 +644,7 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
                         result["race_timeline"] = trial_timeline
                     result["single_result"] = representative_trial.get("result_df")
                     result["single_result_source"] = "Monte Carlo trial with highest AI expected value"
-            prediction_step("STEP8 Result")
+            mark_step("STEP8 Result")
             if not isinstance(result.get("single_result"), pd.DataFrame):
                 result["single_result"] = build_single_race_result_from_timeline(
                     result.get("race_timeline", []),
@@ -660,20 +720,30 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
                 st.success("予想ログを保存しました")
                 st.write(str(prediction_log_path))
             st.session_state["simulation_result"] = result
+            st.session_state["prediction_step_logs"] = list(step_logs)
+            if prediction_mode:
+                progress_area.success("予想処理が完了しました")
+            render_prediction_step_logs(step_logs, expanded=debug_mode)
         except DuplicateLogError as exc:
+            show_current_step_failure()
             st.warning(str(exc))
         except RaceDataFetchError as exc:
+            show_current_step_failure()
             st.error(str(exc))
             if debug_mode:
                 render_fetch_debug({"fetch_debug": exc.debug_records})
             st.stop()
         except ValueError as exc:
+            show_current_step_failure()
             st.error(str(exc))
             st.stop()
         except Exception as exc:
             import traceback
 
+            if is_streamlit_control_exception(exc):
+                raise
             logger.exception("prediction execution failed")
+            show_current_step_failure()
             st.error("処理中にエラーが発生しました。軽量モードで再実行してください。")
             st.error(type(exc).__name__)
             if is_debug_enabled(debug_mode):
@@ -681,6 +751,8 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
             else:
                 st.info("DEBUG_MODE=1 またはサイドバーのデバッグ表示を有効にするとTracebackを表示します。")
             st.stop()
+        finally:
+            st.session_state["prediction_run_in_progress"] = False
 
     result = st.session_state.get("simulation_result")
     if result:
