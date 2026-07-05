@@ -129,7 +129,7 @@ from result_formatter import (
     style_group_table,
     style_probability_long_table,
 )
-from ui_components import render_horse_editor, render_race_inputs
+from ui_components import render_horse_editor, render_race_inputs, show_dataframe_safe
 from thumbnail_generator import generate_youtube_thumbnail
 from video_renderer import render_race_video_from_timeline, render_side_scroll_race_video
 from weight_optimizer import (
@@ -339,7 +339,7 @@ def render_prediction_tab(debug_mode: bool = False) -> None:
         if debug_mode:
             st.code(str(prediction_race_data.get("_database_path", "-")), language="text")
         if fetched_entries_data:
-            st.dataframe(pd.DataFrame(fetched_entries_data), width="stretch", hide_index=True)
+            show_dataframe_safe(pd.DataFrame(fetched_entries_data), width="stretch", hide_index=True)
 
     race_config = render_race_inputs(metadata_defaults, key_prefix=f"prediction_{editor_version}")
     if race_name_input.strip():
@@ -709,13 +709,13 @@ def render_actual_result_tab(debug_mode: bool = False) -> None:
         st.caption(f"race_id: {fetched_result.get('race_id', '-')} / 取得元: {fetched_result.get('source_url', '-')}")
         metadata = fetched_result.get("race_metadata", {})
         if metadata:
-            st.dataframe(pd.DataFrame([metadata]), width="stretch", hide_index=True)
+            show_dataframe_safe(pd.DataFrame([metadata]), width="stretch", hide_index=True)
         if debug_mode:
             render_netkeiba_debug(fetched_result.get("debug", {}), "実結果取得デバッグ")
         payouts = fetched_result.get("payouts", {})
         st.subheader("払い戻し情報")
         if payouts:
-            st.dataframe(payouts_to_dataframe(payouts), width="stretch", hide_index=True)
+            show_dataframe_safe(payouts_to_dataframe(payouts), width="stretch", hide_index=True)
         else:
             st.warning("払い戻し情報を取得できませんでした。結果未確定、または払い戻し表が未公開の可能性があります。")
 
@@ -815,7 +815,7 @@ def render_actual_result_tab(debug_mode: bool = False) -> None:
     if isinstance(latest_evaluation, dict):
         st.subheader("予想と実結果の比較")
         mark_finishes = latest_evaluation.get("mark_finishes", {})
-        st.dataframe(
+        show_dataframe_safe(
             pd.DataFrame([{"印": mark, "着順": mark_finishes.get(mark)} for mark in ("◎", "○", "▲", "△", "☆")]),
             width="stretch",
             hide_index=True,
@@ -835,10 +835,10 @@ def render_actual_result_tab(debug_mode: bool = False) -> None:
             if payout_frame.empty:
                 st.warning("払い戻し情報は未取得です。")
             else:
-                st.dataframe(payout_frame, width="stretch", hide_index=True)
+                show_dataframe_safe(payout_frame, width="stretch", hide_index=True)
         if isinstance(latest_bets, dict):
             st.subheader("AI予想による買い目")
-            st.dataframe(bets_to_dataframe(latest_bets), width="stretch", hide_index=True)
+            show_dataframe_safe(bets_to_dataframe(latest_bets), width="stretch", hide_index=True)
         if isinstance(latest_return, dict) and latest_return:
             st.subheader("回収率")
             summary = latest_return.get("summary", {})
@@ -846,7 +846,7 @@ def render_actual_result_tab(debug_mode: bool = False) -> None:
             rc1.metric("総購入額", f"{int(summary.get('total_stake', 0)):,}円")
             rc2.metric("総払戻額", f"{int(summary.get('total_return', 0)):,}円")
             rc3.metric("回収率", f"{float(summary.get('return_rate', 0.0)):.2f}%")
-            st.dataframe(pd.DataFrame(latest_return.get("by_bet_type", [])), width="stretch", hide_index=True)
+            show_dataframe_safe(pd.DataFrame(latest_return.get("by_bet_type", [])), width="stretch", hide_index=True)
 
 
 def render_performance_tab(debug_mode: bool = False) -> None:
@@ -868,10 +868,10 @@ def render_performance_tab(debug_mode: bool = False) -> None:
         hit_columns[1].metric("予想上位3頭の平均複勝圏内数", f"{summary['average_predicted_top3_count']:.2f}")
         hit_columns[2].metric("1着的中率", f"{summary['winner_hit_rate']:.1%}")
         hit_columns[3].metric("平均的中数", f"{summary['average_hit_count']:.2f}")
-        st.dataframe(evaluation_logs_table(logs), width="stretch", hide_index=True)
+        show_dataframe_safe(evaluation_logs_table(logs), width="stretch", hide_index=True)
         st.subheader("券種別回収率")
         return_rate_table = aggregate_return_rates(logs)
-        st.dataframe(return_rate_table, width="stretch", hide_index=True)
+        show_dataframe_safe(return_rate_table, width="stretch", hide_index=True)
 
         st.subheader("勝因・敗因分析")
         for log in reversed(logs[-10:]):
@@ -883,7 +883,7 @@ def render_performance_tab(debug_mode: bool = False) -> None:
                 for reason in review.get("miss_reason_candidates", []):
                     st.write(f"・{reason}")
                 if review.get("horse_reviews"):
-                    st.dataframe(pd.DataFrame(review["horse_reviews"]), width="stretch", hide_index=True)
+                    show_dataframe_safe(pd.DataFrame(review["horse_reviews"]), width="stretch", hide_index=True)
                 for feedback in review.get("model_feedback", []):
                     st.info(feedback)
 
@@ -931,7 +931,7 @@ def render_performance_tab(debug_mode: bool = False) -> None:
                 "after": [optimized.get("weights", {}).get(key, current_weights[key]) for key in current_weights],
             }
         )
-        st.dataframe(comparison, width="stretch", hide_index=True)
+        show_dataframe_safe(comparison, width="stretch", hide_index=True)
         st.write(
             f"最適化前: {optimized.get('baseline_score', 0):.4f} / "
             f"最適化後: {optimized.get('score', 0):.4f}"
@@ -972,7 +972,7 @@ def render_performance_tab(debug_mode: bool = False) -> None:
         importance = ml_training.get("importance")
         if isinstance(importance, pd.DataFrame) and not importance.empty:
             st.caption("特徴量重要度")
-            st.dataframe(importance, width="stretch", hide_index=True)
+            show_dataframe_safe(importance, width="stretch", hide_index=True)
             st.bar_chart(importance, x="feature", y="importance")
     elif TOP3_MODEL_PATH.is_file():
         existing_model = load_model(TOP3_MODEL_PATH)
@@ -980,7 +980,7 @@ def render_performance_tab(debug_mode: bool = False) -> None:
             importance = model_feature_importance(existing_model, ML_FEATURES)
             if not importance.empty:
                 st.caption("保存済みtop3モデルの特徴量重要度")
-                st.dataframe(importance, width="stretch", hide_index=True)
+                show_dataframe_safe(importance, width="stretch", hide_index=True)
 
 
 def render_prediction_report_section(result: dict[str, Any]) -> None:
@@ -1010,13 +1010,13 @@ def render_prediction_report_section(result: dict[str, Any]) -> None:
     marks = report.get("marks_table")
     if isinstance(marks, pd.DataFrame) and not marks.empty:
         st.caption("AI予想印")
-        st.dataframe(marks, width="stretch", hide_index=True)
+        show_dataframe_safe(marks, width="stretch", hide_index=True)
         st.text_area("AI予想印（コピー用）", value=marks.to_csv(index=False), height=150, key="prediction_report_marks")
     st.text_area("本命・対抗・穴の解説", value=str(report["top_picks"]), height=130, key="prediction_report_picks")
     comments = report.get("horse_comments")
     if isinstance(comments, pd.DataFrame) and not comments.empty:
         st.caption("全頭短評")
-        st.dataframe(comments, width="stretch", hide_index=True)
+        show_dataframe_safe(comments, width="stretch", hide_index=True)
         st.text_area("全頭短評（コピー用）", value=comments.to_csv(index=False), height=200, key="prediction_report_comments")
     st.text_area("シミュレーション概要", value=str(report["simulation_summary"]), height=120, key="prediction_report_simulation")
     st.text_area("リスク要素", value=str(report["risk_factors"]), height=130, key="prediction_report_risks")
@@ -1126,7 +1126,7 @@ def render_youtube_output_tab(debug_mode: bool = False) -> None:
         history = stored_trend.get("history", [])
         if history:
             with st.expander("過去傾向取得データ"):
-                st.dataframe(pd.DataFrame(history), width="stretch", hide_index=True)
+                show_dataframe_safe(pd.DataFrame(history), width="stretch", hide_index=True)
 
     report = generate_prediction_report(prediction_log)
     structure = build_youtube_video_structure(prediction_log, str(prediction_log.get("video_path", "")))
@@ -1137,7 +1137,7 @@ def render_youtube_output_tab(debug_mode: bool = False) -> None:
     with st.expander("同レースの過去傾向", expanded=True):
         for bullet in trend.get("bullets", []):
             st.write(f"・{bullet}")
-    st.dataframe(
+    show_dataframe_safe(
         pd.DataFrame(
             [
                 {
@@ -1155,9 +1155,9 @@ def render_youtube_output_tab(debug_mode: bool = False) -> None:
     diagnosis_rows = next((item.get("rows", []) for item in structure if item.get("section") == "全頭診断"), [])
     featured_rows = next((item.get("rows", []) for item in structure if item.get("section") == "注目馬の紹介と根拠説明"), [])
     st.subheader("全頭診断プレビュー")
-    st.dataframe(pd.DataFrame(diagnosis_rows), width="stretch", hide_index=True)
+    show_dataframe_safe(pd.DataFrame(diagnosis_rows), width="stretch", hide_index=True)
     st.subheader("注目馬紹介プレビュー")
-    st.dataframe(pd.DataFrame(featured_rows), width="stretch", hide_index=True)
+    show_dataframe_safe(pd.DataFrame(featured_rows), width="stretch", hide_index=True)
 
     st.subheader("YouTube用サムネイル")
     if st.button("サムネイル生成", key="generate_youtube_thumbnail_button"):
@@ -1253,14 +1253,14 @@ def render_failure_analysis(logs: list[dict[str, Any]]) -> None:
         display_tags = tag_table.copy()
         display_tags["割合"] = display_tags["割合"].map(lambda value: f"{float(value):.1%}")
         st.caption("原因タグ集計")
-        st.dataframe(display_tags, width="stretch", hide_index=True)
+        show_dataframe_safe(display_tags, width="stretch", hide_index=True)
 
     suggestions = aggregate_improvement_suggestions(logs)
     st.caption("改善提案一覧")
     if suggestions.empty:
         st.write("改善提案はまだありません。")
     else:
-        st.dataframe(suggestions, width="stretch", hide_index=True)
+        show_dataframe_safe(suggestions, width="stretch", hide_index=True)
 
     missed_logs = []
     for log in logs:
@@ -1281,11 +1281,11 @@ def render_failure_analysis(logs: list[dict[str, Any]]) -> None:
         mark_column = prediction_rows.get("印", pd.Series(dtype=str)).astype(str)
         marked = prediction_rows[mark_column.isin(["◎", "○", "▲", "△", "☆"])]
         st.caption("予想印")
-        st.dataframe(marked, width="stretch", hide_index=True)
+        show_dataframe_safe(marked, width="stretch", hide_index=True)
     actual = pd.DataFrame(selected.get("actual_result", []))
     if not actual.empty:
         st.caption("実結果")
-        st.dataframe(actual, width="stretch", hide_index=True)
+        show_dataframe_safe(actual, width="stretch", hide_index=True)
     failure = selected.get("failure_analysis")
     if not isinstance(failure, dict):
         failure = (selected.get("evaluation_metrics") or selected.get("evaluation") or {}).get("failure_analysis", {})
@@ -1306,7 +1306,7 @@ def render_failure_analysis(logs: list[dict[str, Any]]) -> None:
     horse_reviews = pd.DataFrame(review.get("horse_reviews", [])) if isinstance(review, dict) else pd.DataFrame()
     if not horse_reviews.empty:
         st.caption("各馬レビュー")
-        st.dataframe(horse_reviews, width="stretch", hide_index=True)
+        show_dataframe_safe(horse_reviews, width="stretch", hide_index=True)
     for suggestion in failure.get("improvement_suggestions", []):
         st.info(str(suggestion))
 
@@ -1318,7 +1318,7 @@ def render_elo_update_section(logs: list[dict[str, Any]]) -> None:
     st.caption(f"保存済みElo: {len(ratings)}頭")
     if ratings:
         ranking = sorted(ratings.items(), key=lambda item: item[1], reverse=True)[:20]
-        st.dataframe(
+        show_dataframe_safe(
             pd.DataFrame(
                 [{"horse_name": name, "elo_rating": round(float(value), 2)} for name, value in ranking]
             ),
@@ -1374,7 +1374,7 @@ def render_log_management() -> None:
     if prediction_frame.empty:
         st.info("予想ログはありません。")
     else:
-        st.dataframe(
+        show_dataframe_safe(
             prediction_frame[["ファイル名", "race_id", "race_name", "race_date", "timestamp"]],
             width="stretch",
             hide_index=True,
@@ -1385,7 +1385,7 @@ def render_log_management() -> None:
     if evaluation_frame.empty:
         st.info("評価ログはありません。")
     else:
-        st.dataframe(
+        show_dataframe_safe(
             evaluation_frame[["ファイル名", "race_id", "race_name", "race_date", "timestamp"]],
             width="stretch",
             hide_index=True,
@@ -1454,7 +1454,7 @@ def render_log_management() -> None:
                 duplicate_paths.extend(group.get("paths", []))
         if duplicate_rows:
             st.warning(f"重複ログを{len(duplicate_rows)}組検出しました。")
-            st.dataframe(pd.DataFrame(duplicate_rows), width="stretch", hide_index=True)
+            show_dataframe_safe(pd.DataFrame(duplicate_rows), width="stretch", hide_index=True)
             selected_duplicates = st.multiselect(
                 "削除する重複ログを選択",
                 list(dict.fromkeys(duplicate_paths)),
@@ -1500,7 +1500,7 @@ def render_netkeiba_debug(debug: object, heading: str) -> None:
     for section_name, section in debug.items():
         with st.expander(str(section_name), expanded=False):
             if isinstance(section, pd.DataFrame):
-                st.dataframe(section, width="stretch", hide_index=True)
+                show_dataframe_safe(section, width="stretch", hide_index=True)
                 continue
             if not isinstance(section, dict):
                 st.write(section)
@@ -1515,10 +1515,10 @@ def render_netkeiba_debug(debug: object, heading: str) -> None:
             for key, value in section.items():
                 if isinstance(value, pd.DataFrame):
                     st.markdown(f"**{key}**")
-                    st.dataframe(value, width="stretch", hide_index=True)
+                    show_dataframe_safe(value, width="stretch", hide_index=True)
                 elif isinstance(value, list):
                     st.markdown(f"**{key}**")
-                    st.dataframe(pd.DataFrame(value), width="stretch", hide_index=True)
+                    show_dataframe_safe(pd.DataFrame(value), width="stretch", hide_index=True)
                 elif isinstance(value, dict):
                     st.markdown(f"**{key}**")
                     st.json(value)
@@ -1608,7 +1608,7 @@ def render_results(result: dict[str, object], debug_mode: bool = False, predicti
     single_result = result.get("single_result")
     if isinstance(single_result, pd.DataFrame) and not single_result.empty:
         st.caption(str(result.get("single_result_source", "controlled_timeline final_frame")))
-        st.dataframe(single_result, width="stretch", hide_index=True)
+        show_dataframe_safe(single_result, width="stretch", hide_index=True)
     else:
         st.warning("今回のシミュレーション着順を作成できませんでした。")
 
@@ -1619,7 +1619,7 @@ def render_results(result: dict[str, object], debug_mode: bool = False, predicti
     c3.metric("差し有利度", f"{float(pace_prediction.get('closer_advantage', 0.0)):.2f}")
     st.write(pace_comment(pace_prediction))
     st.info(f"コースバイアス：{get_course_bias(result.get('race_config', {})).get('comment', '')}")
-    st.dataframe(style_group_table(pace_prediction), width="stretch", hide_index=True)
+    show_dataframe_safe(style_group_table(pace_prediction), width="stretch", hide_index=True)
 
     prediction = result.get("prediction")
     if isinstance(prediction, dict):
@@ -1632,7 +1632,7 @@ def render_results(result: dict[str, object], debug_mode: bool = False, predicti
         )
 
     st.subheader("各馬の分析結果")
-    st.dataframe(format_analysis_table(horse_analysis), width="stretch", hide_index=True)
+    show_dataframe_safe(format_analysis_table(horse_analysis), width="stretch", hide_index=True)
     with st.expander("脚質確率プロファイル"):
         probability_table = style_probability_long_table(horse_analysis)
         if not probability_table.empty:
@@ -1643,7 +1643,7 @@ def render_results(result: dict[str, object], debug_mode: bool = False, predicti
     if recent_races_df.empty:
         st.info("近走データが取得できませんでした。")
     else:
-        st.dataframe(recent_races_df, width="stretch", hide_index=True)
+        show_dataframe_safe(recent_races_df, width="stretch", hide_index=True)
 
     if debug_mode:
         render_fetch_debug(result)
@@ -1908,7 +1908,7 @@ def render_video_debug(result: dict[str, object]) -> None:
     path = Path(video_path) if video_path else None
     exists = bool(path and path.exists())
     st.subheader("動画生成デバッグ")
-    st.dataframe(
+    show_dataframe_safe(
         pd.DataFrame(
             [
                 {
@@ -1962,7 +1962,7 @@ def render_prediction_results(
 
     st.subheader("AI予想ランキング")
     sorted_table = sort_prediction_table(prediction_table, sort_by)
-    st.dataframe(sorted_table, width="stretch", hide_index=True)
+    show_dataframe_safe(sorted_table, width="stretch", hide_index=True)
 
     st.subheader("勝率・連対率・複勝率グラフ")
     rate_table = prediction_table[["馬名", "win_rate", "top2_rate", "top3_rate"]].melt(
@@ -1975,7 +1975,7 @@ def render_prediction_results(
     if horse_analysis is not None and pace_prediction is not None and race_config is not None:
         comments_df = build_horse_comments_table(sorted_table, horse_analysis, pace_prediction, race_config)
         st.subheader("全頭短評")
-        st.dataframe(comments_df, width="stretch", hide_index=True)
+        show_dataframe_safe(comments_df, width="stretch", hide_index=True)
 
     with st.expander("予想根拠"):
         for _, row in sorted_table.iterrows():
@@ -2065,11 +2065,11 @@ def render_debug_table_like(value: Any) -> None:
     if isinstance(value, list) and value and all(isinstance(item, pd.DataFrame) for item in value):
         for index, frame in enumerate(value, start=1):
             st.caption(f"table {index}")
-            st.dataframe(frame, width="stretch", hide_index=True)
+            show_dataframe_safe(frame, width="stretch", hide_index=True)
         return
 
     frame = to_debug_dataframe(value)
-    st.dataframe(frame, width="stretch", hide_index=True)
+    show_dataframe_safe(frame, width="stretch", hide_index=True)
     if frame.empty:
         st.caption("表示できるデータがありません。")
 
@@ -2148,7 +2148,7 @@ def render_style_detection_debug(result: dict[str, object]) -> None:
                 "mud_source": item.get("mud_source", "neutral"),
             }
         )
-    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+    show_dataframe_safe(pd.DataFrame(rows), width="stretch", hide_index=True)
     for message in warning_messages:
         st.warning(message)
 
@@ -2187,7 +2187,7 @@ def render_timeline_debug(result: dict[str, object]) -> None:
             if column in prediction_table.columns
         ]
         st.markdown("**prediction_table debug**")
-        st.dataframe(prediction_table[debug_columns], width="stretch", hide_index=True)
+        show_dataframe_safe(prediction_table[debug_columns], width="stretch", hide_index=True)
 
     style_mismatches: list[dict[str, object]] = []
     for frame in result.get("race_timeline", []):
@@ -2209,7 +2209,7 @@ def render_timeline_debug(result: dict[str, object]) -> None:
                 )
     if style_mismatches:
         st.warning("固定したactual_running_styleとフレーム内の脚質が一致しません。")
-        st.dataframe(pd.DataFrame(style_mismatches), width="stretch", hide_index=True)
+        show_dataframe_safe(pd.DataFrame(style_mismatches), width="stretch", hide_index=True)
 
     table = build_timeline_debug_table(
         result.get("race_timeline", []),
@@ -2226,7 +2226,7 @@ def render_timeline_debug(result: dict[str, object]) -> None:
         if target_table.empty:
             continue
         st.markdown(f"**{target}地点順位表**")
-        st.dataframe(target_table.drop(columns=["target"]), width="stretch", hide_index=True)
+        show_dataframe_safe(target_table.drop(columns=["target"]), width="stretch", hide_index=True)
     render_finish_distribution_debug(result.get("race_timeline", []))
 
 
@@ -2445,7 +2445,7 @@ def render_finish_distribution_debug(race_timeline: object) -> None:
     )
     if not top5_table.empty:
         st.markdown("**最終着順上位5頭の脚質分布**")
-        st.dataframe(top5_table, width="stretch", hide_index=True)
+        show_dataframe_safe(top5_table, width="stretch", hide_index=True)
 
     style_order = {"逃げ": 0, "先行": 1, "自在": 2, "差し": 3, "追込": 4}
     finish_styles = [style_order.get(str(horse.get("actual_running_style", "")), 99) for horse in sorted(horses, key=lambda item: int(item.get("rank", 999) or 999))]
@@ -2474,7 +2474,7 @@ def render_finish_distribution_debug(race_timeline: object) -> None:
         .reset_index()
     )
     st.markdown("**finish style distribution**")
-    st.dataframe(style_distribution, width="stretch", hide_index=True)
+    show_dataframe_safe(style_distribution, width="stretch", hide_index=True)
 
 
 def debug_float(value: object, default: float) -> float:

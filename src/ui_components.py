@@ -1,5 +1,7 @@
 ﻿from __future__ import annotations
 
+from typing import Any
+
 import pandas as pd
 import streamlit as st
 
@@ -71,6 +73,26 @@ def default_horse_dataframe(count: int = 5) -> pd.DataFrame:
             "jockey": [""] * count,
         }
     )
+
+
+def make_arrow_safe_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """Return a display-only DataFrame that Streamlit/Arrow can serialize."""
+    safe_df = df.copy()
+    for column in safe_df.columns:
+        if safe_df[column].dtype == "object":
+            safe_df[column] = safe_df[column].apply(lambda value: "" if value is None else str(value))
+    return safe_df
+
+
+def show_dataframe_safe(df: Any, **kwargs: Any) -> None:
+    """Display a DataFrame after removing mixed object dtypes."""
+    if df is None:
+        return
+    frame = df if isinstance(df, pd.DataFrame) else pd.DataFrame(df)
+    if frame.empty:
+        st.info("表示するデータがありません。")
+        return
+    st.dataframe(make_arrow_safe_dataframe(frame), **kwargs)
 
 
 def render_horse_editor(
