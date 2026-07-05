@@ -27,7 +27,7 @@ OUTPUT_DIR = Path("outputs")
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from runtime_mode import ENVIRONMENT_MODES, resolve_environment_mode, should_reload_modules
+from runtime_mode import get_runtime_mode, should_reload_modules
 
 # Streamlit keeps imported modules alive between reruns. Reload the project
 # modules whose dataclasses/function signatures change often during development.
@@ -634,15 +634,13 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
 
     st.sidebar.header("実行設定")
     cloud_environment = is_streamlit_cloud()
-    environment_mode = st.sidebar.selectbox(
-        "実行環境モード",
-        ENVIRONMENT_MODES,
-        index=0,
-    )
-    environment_state = resolve_environment_mode(environment_mode, cloud_environment)
-    if environment_state.get("warning"):
-        st.sidebar.warning(str(environment_state["warning"]))
-    st.sidebar.info(f"現在の実行環境: {environment_state['effective_mode']}")
+    runtime_mode = get_runtime_mode(cloud_environment)
+    if runtime_mode == "CLOUD":
+        st.sidebar.info("現在の実行環境：公開版（Cloud）")
+        st.sidebar.info("Monte Carlo・動画生成・YouTube生成はCloudでは無効です。")
+    else:
+        st.sidebar.info("現在の実行環境：ローカル高品質版")
+        st.sidebar.info("Monte Carlo・動画生成・YouTube生成が利用できます。")
     execution_mode = st.sidebar.selectbox(
         "実行モード",
         ["軽量モード", "通常モード", "高品質動画モード"],
@@ -652,20 +650,19 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
     lightweight_mode = execution_mode == "軽量モード"
     use_local_database = st.sidebar.checkbox("保存済みDBを優先する", value=True)
     force_refresh_data = st.sidebar.checkbox("データを再取得する", value=False)
-    public_prediction_only = st.sidebar.checkbox(
-        "公開版AI予想のみ実行",
-        value=bool(environment_state["public_prediction_only"]),
-        disabled=bool(environment_state["force_public_checkbox"]),
-        help="ONにするとMonte Carlo、race_timeline、動画生成を使わず公開版と同じ軽量AI予想だけを実行します。",
-    )
-    public_prediction_active = should_use_public_prediction(
-        cloud_environment,
-        public_prediction_only or bool(environment_state["public_prediction_only"]),
-    )
+    if runtime_mode == "CLOUD":
+        public_prediction_only = True
+    else:
+        public_prediction_only = st.sidebar.checkbox(
+            "公開版AI予想のみ実行",
+            value=False,
+            help="Cloud公開版と同じ挙動をローカルで確認します。Monte Carlo・動画生成をスキップします。",
+        )
+    use_public_prediction = is_streamlit_cloud() or public_prediction_only
+    public_prediction_active = use_public_prediction
     st.session_state["execution_mode"] = execution_mode
     st.session_state["execution_mode_settings"] = mode_settings
-    st.session_state["environment_mode"] = environment_mode
-    st.session_state["effective_environment_mode"] = environment_state["effective_mode"]
+    st.session_state["runtime_mode"] = runtime_mode
     st.session_state["public_prediction_mode"] = public_prediction_active
     if cloud_environment and execution_mode == "高品質動画モード":
         st.warning("高品質動画モードはStreamlit Cloudでは重すぎるため、ローカル実行を推奨します。")
@@ -1106,8 +1103,7 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
             result["controlled_timeline"] = result.get("race_timeline", [])
             result["lightweight_mode"] = lightweight_mode
             result["public_prediction_mode"] = public_prediction_active
-            result["environment_mode"] = environment_mode
-            result["effective_environment_mode"] = environment_state["effective_mode"]
+            result["runtime_mode"] = runtime_mode
             result["execution_mode"] = execution_mode
             result["use_local_database"] = use_local_database
             result["force_refresh_data"] = force_refresh_data
@@ -1504,7 +1500,7 @@ def render_performance_tab(debug_mode: bool = False) -> None:
     if st.button("過去傾向データを公開版用にエクスポート", key="export_public_trend_database_button"):
         export_result = export_trend_database_to_public_dir()
         st.success(f"コピーしたファイル数: {export_result.get('copied_count', 0)}")
-        st.write(f"コピー先: {export_result.get('target_dir', '')}")
+        st.write(f"コピー先: {export_result.get('public_dir', '')}")
         copied_files = export_result.get("copied_files", [])
         if copied_files:
             show_dataframe_safe(
@@ -2241,8 +2237,7 @@ def render_results(result: dict[str, object], debug_mode: bool = False, predicti
         st.info("高品質シミュレーションはローカル版をご利用ください。")
     if debug_mode:
         debug_rows = {
-            "実行環境モード": result.get("environment_mode", ""),
-            "有効な実行環境": result.get("effective_environment_mode", ""),
+            "実行環境": result.get("runtime_mode", ""),
             "実行モード": result.get("execution_mode", ""),
             "Monte Carlo回数": result.get("monte_carlo_runs", 0),
             "予想実行時の動画生成": "ON" if result.get("video_generation_on_prediction") else "OFF",

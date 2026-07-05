@@ -64,6 +64,9 @@ def get_or_build_trend_data(
     max_age_days: int = 180,
 ) -> dict[str, Any] | None:
     cached = load_trend_cache(race_name, venue, distance)
+    if cached and not force_refresh and cached.get("_database_source") == "data_public":
+        cached["_database_status"] = "public_hit"
+        return cached
     if cached and not force_refresh and is_fresh(cached.get("updated_at"), max_age_days):
         cached["_database_status"] = "hit"
         return cached
@@ -95,24 +98,31 @@ def ensure_public_trend_database_dir() -> Path:
 
 
 def export_trend_database_to_public_dir(
-    source_dir: str | Path | None = None,
-    target_dir: str | Path | None = None,
+    source_dir: str | Path = "data/trend_database",
+    public_dir: str | Path = "data_public/trend_database",
 ) -> dict[str, Any]:
-    source = Path(source_dir) if source_dir is not None else TREND_DB_DIR
-    target = Path(target_dir) if target_dir is not None else PUBLIC_TREND_DB_DIR
-    target.mkdir(parents=True, exist_ok=True)
+    source = Path(source_dir)
+    public = Path(public_dir)
+    public.mkdir(parents=True, exist_ok=True)
     copied: list[str] = []
     if not source.is_dir():
-        return {"copied_count": 0, "copied_files": copied, "source_dir": str(source), "target_dir": str(target)}
+        return {
+            "copied_count": 0,
+            "source_dir": str(source),
+            "public_dir": str(public),
+            "copied_files": copied,
+            "message": f"source_dir does not exist: {source}",
+        }
     for item in sorted(source.glob("*.json")):
         if not item.is_file():
             continue
-        destination = target / item.name
+        destination = public / item.name
         shutil.copy2(item, destination)
         copied.append(str(destination))
     return {
         "copied_count": len(copied),
-        "copied_files": copied,
         "source_dir": str(source),
-        "target_dir": str(target),
+        "public_dir": str(public),
+        "copied_files": copied,
+        "message": f"copied {len(copied)} json files",
     }
