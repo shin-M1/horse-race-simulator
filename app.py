@@ -12,6 +12,8 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
+APP_STARTUP_STARTED_AT = time.perf_counter()
+
 import pandas as pd
 import streamlit as st
 
@@ -25,9 +27,13 @@ OUTPUT_DIR = Path("outputs")
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
+from runtime_mode import ENVIRONMENT_MODES, resolve_environment_mode, should_reload_modules
+
 # Streamlit keeps imported modules alive between reruns. Reload the project
 # modules whose dataclasses/function signatures change often during development.
-for module_name in [
+DEVELOPMENT_RELOAD = should_reload_modules()
+if DEVELOPMENT_RELOAD:
+    for module_name in [
     "race_config",
     "course_db",
     "horse_analyzer",
@@ -62,9 +68,9 @@ for module_name in [
     "race_database",
     "trend_database",
     "elo_rating",
-]:
-    if module_name in sys.modules:
-        importlib.reload(sys.modules[module_name])
+    ]:
+        if module_name in sys.modules:
+            importlib.reload(sys.modules[module_name])
 
 from app_state import dataframe_to_horses, validate_inputs
 from analysis_reporter import analyze_prediction_failure, generate_race_review
@@ -120,15 +126,12 @@ from pace_predictor import PacePredictor
 from public_prediction import build_public_prediction_result, should_use_public_prediction
 from race_data_fetcher import load_prediction_race_data
 from race_database import get_or_fetch_race_data
-from race_trend_analyzer import analyze_same_race_trends
 from race_trend_database import (
     analyze_same_race_trend_database,
     build_same_race_trend_database,
     load_same_race_trend_database,
 )
-from race_trend_fetcher import fetch_same_race_history, save_same_race_history
-from trend_database import get_or_build_trend_data, load_trend_cache
-from report_generator import generate_prediction_report, save_prediction_report
+from trend_database import export_trend_database_to_public_dir, get_or_build_trend_data, load_trend_cache
 from result_fetcher import load_completed_race_result
 from result_formatter import (
     build_single_race_result_from_timeline,
@@ -140,26 +143,22 @@ from result_formatter import (
     style_probability_long_table,
 )
 from ui_components import render_horse_editor, render_race_inputs, show_dataframe_safe
-from thumbnail_generator import generate_youtube_thumbnail
-from video_renderer import render_race_video_from_timeline, render_side_scroll_race_video
 from weight_optimizer import (
     build_training_dataset,
     load_model_weights,
     optimize_prediction_weights,
     save_model_weights,
 )
-from youtube_video_builder import (
-    REQUIRED_SECTION_ORDER,
-    build_youtube_prediction_video,
-    build_youtube_video_structure,
-    generate_race_trend_summary,
-)
 
 
-simulation_main = importlib.reload(simulation_main)
+APP_IMPORTS_COMPLETED_AT = time.perf_counter()
+
+if DEVELOPMENT_RELOAD:
+    simulation_main = importlib.reload(simulation_main)
 run_race_simulation = simulation_main.run_race_simulation
 
 st.set_page_config(page_title="競馬レースシミュレーター", layout="wide")
+APP_PAGE_CONFIG_SET_AT = time.perf_counter()
 
 
 @st.cache_data(ttl=86400, max_entries=20, show_spinner=False)
@@ -264,6 +263,22 @@ def is_debug_enabled(debug_mode: bool = False) -> bool:
         or st.session_state.get("debug_mode", False)
         or env_value in {"1", "true", "yes", "on"}
     )
+
+
+def startup_timing_snapshot(render_prediction_started_at: float | None = None) -> dict[str, float | bool]:
+    snapshot: dict[str, float | bool] = {
+        "import完了時間_sec": round(APP_IMPORTS_COMPLETED_AT - APP_STARTUP_STARTED_AT, 3),
+        "set_page_configまで_sec": round(APP_PAGE_CONFIG_SET_AT - APP_STARTUP_STARTED_AT, 3),
+        "開発用reload": DEVELOPMENT_RELOAD,
+    }
+    if render_prediction_started_at is not None:
+        snapshot["render_prediction_tab開始まで_sec"] = round(render_prediction_started_at - APP_STARTUP_STARTED_AT, 3)
+    return snapshot
+
+
+def render_startup_timing_debug(render_prediction_started_at: float) -> None:
+    with st.sidebar.expander("起動時間デバッグ", expanded=False):
+        st.json(startup_timing_snapshot(render_prediction_started_at))
 
 
 def prediction_step(message: str) -> None:
@@ -611,11 +626,23 @@ def render_prediction_tab(debug_mode: bool = False) -> None:
 
 
 def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
+    render_prediction_started_at = time.perf_counter()
     debug_mode = bool(debug_mode or st.session_state.get("debug_mode", False))
+    if debug_mode:
+        render_startup_timing_debug(render_prediction_started_at)
     st.write("レース条件と出走馬を入力すると、近走分析、展開予測、シミュレーション、動画生成まで実行します。")
 
     st.sidebar.header("実行設定")
     cloud_environment = is_streamlit_cloud()
+    environment_mode = st.sidebar.selectbox(
+        "実行環境モード",
+        ENVIRONMENT_MODES,
+        index=0,
+    )
+    environment_state = resolve_environment_mode(environment_mode, cloud_environment)
+    if environment_state.get("warning"):
+        st.sidebar.warning(str(environment_state["warning"]))
+    st.sidebar.info(f"現在の実行環境: {environment_state['effective_mode']}")
     execution_mode = st.sidebar.selectbox(
         "実行モード",
         ["軽量モード", "通常モード", "高品質動画モード"],
@@ -627,13 +654,18 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
     force_refresh_data = st.sidebar.checkbox("データを再取得する", value=False)
     public_prediction_only = st.sidebar.checkbox(
         "公開版AI予想のみ実行",
-        value=cloud_environment,
-        disabled=cloud_environment,
+        value=bool(environment_state["public_prediction_only"]),
+        disabled=bool(environment_state["force_public_checkbox"]),
         help="ONにするとMonte Carlo、race_timeline、動画生成を使わず公開版と同じ軽量AI予想だけを実行します。",
     )
-    public_prediction_active = should_use_public_prediction(cloud_environment, public_prediction_only)
+    public_prediction_active = should_use_public_prediction(
+        cloud_environment,
+        public_prediction_only or bool(environment_state["public_prediction_only"]),
+    )
     st.session_state["execution_mode"] = execution_mode
     st.session_state["execution_mode_settings"] = mode_settings
+    st.session_state["environment_mode"] = environment_mode
+    st.session_state["effective_environment_mode"] = environment_state["effective_mode"]
     st.session_state["public_prediction_mode"] = public_prediction_active
     if cloud_environment and execution_mode == "高品質動画モード":
         st.warning("高品質動画モードはStreamlit Cloudでは重すぎるため、ローカル実行を推奨します。")
@@ -1074,6 +1106,8 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
             result["controlled_timeline"] = result.get("race_timeline", [])
             result["lightweight_mode"] = lightweight_mode
             result["public_prediction_mode"] = public_prediction_active
+            result["environment_mode"] = environment_mode
+            result["effective_environment_mode"] = environment_state["effective_mode"]
             result["execution_mode"] = execution_mode
             result["use_local_database"] = use_local_database
             result["force_refresh_data"] = force_refresh_data
@@ -1464,6 +1498,27 @@ def render_performance_tab(debug_mode: bool = False) -> None:
                     st.info(feedback)
 
     render_failure_analysis(logs)
+
+    st.subheader("公開版データ管理")
+    st.write("ローカルで作成した過去10年傾向データを、Streamlit Cloud公開版で読める静的データへコピーします。")
+    if st.button("過去傾向データを公開版用にエクスポート", key="export_public_trend_database_button"):
+        export_result = export_trend_database_to_public_dir()
+        st.success(f"コピーしたファイル数: {export_result.get('copied_count', 0)}")
+        st.write(f"コピー先: {export_result.get('target_dir', '')}")
+        copied_files = export_result.get("copied_files", [])
+        if copied_files:
+            show_dataframe_safe(
+                pd.DataFrame({"コピー先ファイル": copied_files}),
+                width="stretch",
+                hide_index=True,
+            )
+        st.code(
+            "git add data_public/trend_database\n"
+            "git commit -m \"Add public race trend database\"\n"
+            "git push",
+            language="bash",
+        )
+
     render_log_management()
     render_elo_update_section(logs)
 
@@ -1560,6 +1615,8 @@ def render_performance_tab(debug_mode: bool = False) -> None:
 
 
 def render_prediction_report_section(result: dict[str, Any]) -> None:
+    from report_generator import generate_prediction_report, save_prediction_report
+
     prediction_table = _prediction_table(result)
     if not isinstance(prediction_table, pd.DataFrame) or prediction_table.empty:
         return
@@ -1612,14 +1669,23 @@ def render_youtube_output_tab(debug_mode: bool = False) -> None:
     debug_mode = bool(debug_mode or st.session_state.get("debug_mode", False))
     st.write("AI予想結果から、YouTube投稿に使いやすいサムネイルと構成動画を生成します。")
     execution_mode = str(st.session_state.get("execution_mode", "軽量モード"))
-    if is_streamlit_cloud():
-        st.warning("Streamlit Cloud公開版ではYouTube動画生成を無効化しています。ローカル版をご利用ください。")
+    if is_streamlit_cloud() or bool(st.session_state.get("public_prediction_mode", False)):
+        st.warning("Cloud公開版ではYouTube動画生成を無効化しています。ローカル高品質版をご利用ください。")
         return
     if execution_mode == "軽量モード":
         st.warning("軽量モードではYouTube動画生成・AI読み上げ・BGM合成を無効化しています。ローカル環境で通常モード以上を選択してください。")
         return
     if is_streamlit_cloud() and execution_mode == "高品質動画モード":
         st.warning("高品質動画モードはStreamlit Cloudでは重すぎるため、ローカル実行を推奨します。")
+    from report_generator import generate_prediction_report
+    from thumbnail_generator import generate_youtube_thumbnail
+    from youtube_video_builder import (
+        REQUIRED_SECTION_ORDER,
+        build_youtube_prediction_video,
+        build_youtube_video_structure,
+        generate_race_trend_summary,
+    )
+
     prediction_log = _select_youtube_prediction_log()
     if not prediction_log:
         st.info("まず予想タブでシミュレーションを実行するか、予想ログを保存してください。")
@@ -2175,6 +2241,8 @@ def render_results(result: dict[str, object], debug_mode: bool = False, predicti
         st.info("高品質シミュレーションはローカル版をご利用ください。")
     if debug_mode:
         debug_rows = {
+            "実行環境モード": result.get("environment_mode", ""),
+            "有効な実行環境": result.get("effective_environment_mode", ""),
             "実行モード": result.get("execution_mode", ""),
             "Monte Carlo回数": result.get("monte_carlo_runs", 0),
             "予想実行時の動画生成": "ON" if result.get("video_generation_on_prediction") else "OFF",
@@ -2327,6 +2395,8 @@ def render_video_for_result(
     width: int | None = None,
     height: int | None = None,
 ) -> None:
+    from video_renderer import render_race_video_from_timeline, render_side_scroll_race_video
+
     output_dir = OUTPUT_DIR
     output_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

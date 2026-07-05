@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import shutil
 from pathlib import Path
 from typing import Any, Callable
 
@@ -11,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 TREND_DB_DIR = DATA_DIR / "trend_database"
+PUBLIC_TREND_DB_DIR = Path("data_public") / "trend_database"
 
 
 def trend_cache_key(race_name: str, venue: str, distance: int) -> str:
@@ -21,13 +23,27 @@ def trend_cache_path(race_name: str, venue: str, distance: int) -> str:
     return str(TREND_DB_DIR / f"{trend_cache_key(race_name, venue, distance)}.json")
 
 
+def public_trend_cache_path(race_name: str, venue: str, distance: int) -> str:
+    return str(PUBLIC_TREND_DB_DIR / f"{trend_cache_key(race_name, venue, distance)}.json")
+
+
 def load_trend_cache(race_name: str, venue: str, distance: int) -> dict[str, Any] | None:
-    payload = read_json(trend_cache_path(race_name, venue, distance))
-    if payload is None:
-        return None
-    payload["_database_status"] = "hit"
-    payload["_database_path"] = trend_cache_path(race_name, venue, distance)
-    return payload
+    local_path = trend_cache_path(race_name, venue, distance)
+    payload = read_json(local_path)
+    if payload is not None:
+        payload["_database_status"] = "hit"
+        payload["_database_path"] = local_path
+        payload["_database_source"] = "data"
+        return payload
+
+    public_path = public_trend_cache_path(race_name, venue, distance)
+    payload = read_json(public_path)
+    if payload is not None:
+        payload["_database_status"] = "public_hit"
+        payload["_database_path"] = public_path
+        payload["_database_source"] = "data_public"
+        return payload
+    return None
 
 
 def save_trend_cache(race_name: str, venue: str, distance: int, trend_data: dict[str, Any]) -> str:
@@ -71,3 +87,32 @@ def get_or_build_trend_data(
 def ensure_trend_database_dir() -> Path:
     TREND_DB_DIR.mkdir(parents=True, exist_ok=True)
     return TREND_DB_DIR
+
+
+def ensure_public_trend_database_dir() -> Path:
+    PUBLIC_TREND_DB_DIR.mkdir(parents=True, exist_ok=True)
+    return PUBLIC_TREND_DB_DIR
+
+
+def export_trend_database_to_public_dir(
+    source_dir: str | Path | None = None,
+    target_dir: str | Path | None = None,
+) -> dict[str, Any]:
+    source = Path(source_dir) if source_dir is not None else TREND_DB_DIR
+    target = Path(target_dir) if target_dir is not None else PUBLIC_TREND_DB_DIR
+    target.mkdir(parents=True, exist_ok=True)
+    copied: list[str] = []
+    if not source.is_dir():
+        return {"copied_count": 0, "copied_files": copied, "source_dir": str(source), "target_dir": str(target)}
+    for item in sorted(source.glob("*.json")):
+        if not item.is_file():
+            continue
+        destination = target / item.name
+        shutil.copy2(item, destination)
+        copied.append(str(destination))
+    return {
+        "copied_count": len(copied),
+        "copied_files": copied,
+        "source_dir": str(source),
+        "target_dir": str(target),
+    }

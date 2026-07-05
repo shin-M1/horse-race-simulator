@@ -20,12 +20,18 @@ outputs/**/*.json
 outputs/**/*.log
 
 # Local data caches
+data/**/*.json
+data/**/*.pkl
 data/horse_database/*.json
 data/race_database/*.json
 data/trend_database/*.json
 data/elo/*.json
 data/model/*.json
 data/model/*.pkl
+!data_public/
+!data_public/**
+!data_public/trend_database/
+!data_public/trend_database/*.json
 
 # Logs
 *.log
