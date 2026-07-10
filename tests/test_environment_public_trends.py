@@ -14,7 +14,7 @@ if str(SRC) not in sys.path:
 
 import trend_database
 from public_prediction import should_use_public_prediction
-from runtime_mode import get_runtime_mode, should_reload_modules
+from runtime_mode import get_runtime_mode, is_streamlit_cloud, should_reload_modules
 
 
 class EnvironmentAndPublicTrendTest(unittest.TestCase):
@@ -23,6 +23,7 @@ class EnvironmentAndPublicTrendTest(unittest.TestCase):
 
     def test_runtime_mode_local(self) -> None:
         self.assertEqual(get_runtime_mode(False), "LOCAL")
+        self.assertIsInstance(is_streamlit_cloud(), bool)
 
     def test_cloud_hides_environment_selector(self) -> None:
         source = (ROOT / "app.py").read_text(encoding="utf-8")
