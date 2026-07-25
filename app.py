@@ -47,6 +47,7 @@ if DEVELOPMENT_RELOAD:
     "ml_model",
     "monte_carlo",
     "public_prediction",
+    "prediction_explainability",
     "result_formatter",
     "video_renderer",
     "netkeiba_fetcher",
@@ -124,6 +125,12 @@ from monte_carlo import run_monte_carlo_prediction
 from horse_analyzer import HorseAnalyzer
 from pace_predictor import PacePredictor
 from public_prediction import build_public_prediction_result, should_use_public_prediction
+from prediction_explainability import (
+    build_ai_evaluation_table,
+    build_prediction_confidence_table,
+    build_prediction_reason_table,
+    contribution_table_from_row,
+)
 from race_data_fetcher import load_prediction_race_data
 from race_database import get_or_fetch_race_data
 from race_trend_database import (
@@ -2280,20 +2287,6 @@ def render_results(result: dict[str, object], debug_mode: bool = False, predicti
             race_config=result.get("race_config", {}),
         )
 
-    st.subheader("各馬の分析結果")
-    show_dataframe_safe(format_analysis_table(horse_analysis), width="stretch", hide_index=True)
-    with st.expander("脚質確率プロファイル"):
-        probability_table = style_probability_long_table(horse_analysis)
-        if not probability_table.empty:
-            st.bar_chart(probability_table, x="馬名", y="確率", color="脚質")
-
-    st.subheader("近走5走データ確認")
-    recent_races_df = build_recent_races_table(result.get("recent_races", []))
-    if recent_races_df.empty:
-        st.info("近走データが取得できませんでした。")
-    else:
-        show_dataframe_safe(recent_races_df, width="stretch", hide_index=True)
-
     if debug_mode:
         render_fetch_debug(result)
         render_style_detection_debug(result)
@@ -2617,32 +2610,34 @@ def render_prediction_results(
     if not isinstance(prediction_table, pd.DataFrame) or prediction_table.empty:
         return
 
-    st.subheader("AI予想ランキング")
-    if bool(prediction.get("public_prediction_mode") or prediction.get("public_prediction")):
-        st.info("能力スコア：馬そのものの総合力")
-        st.info("今回条件適性スコア：今回のコース・展開・馬場・傾向との噛み合い")
-        st.info("AIスコア：能力スコアと今回条件適性スコアを統合した最終評価")
     sorted_table = sort_prediction_table(prediction_table, sort_by)
-    show_dataframe_safe(sorted_table, width="stretch", hide_index=True)
 
-    st.subheader("勝率・連対率・複勝率グラフ")
-    rate_table = prediction_table[["馬名", "win_rate", "top2_rate", "top3_rate"]].melt(
-        id_vars="馬名",
-        var_name="指標",
-        value_name="確率",
-    )
-    st.bar_chart(rate_table, x="馬名", y="確率", color="指標")
+    st.subheader("AI評価一覧")
+    show_dataframe_safe(build_ai_evaluation_table(sorted_table), width="stretch", hide_index=True)
 
-    if horse_analysis is not None and pace_prediction is not None and race_config is not None:
-        comments_df = build_horse_comments_table(sorted_table, horse_analysis, pace_prediction, race_config)
-        st.subheader("全頭短評")
-        show_dataframe_safe(comments_df, width="stretch", hide_index=True)
+    st.subheader("予想理由")
+    show_dataframe_safe(build_prediction_reason_table(sorted_table), width="stretch", hide_index=True)
 
-    with st.expander("予想根拠"):
-        for _, row in sorted_table.iterrows():
-            mark = str(row.get("印", ""))
-            st.markdown(f"**{mark} {row['馬番']} {row['馬名']}**")
-            st.write(row.get("予想根拠", ""))
+    st.subheader("予想信頼度")
+    show_dataframe_safe(build_prediction_confidence_table(sorted_table), width="stretch", hide_index=True)
+
+    horse_options = [
+        f"{row.get('印', '')} {row.get('馬番', row.get('horse_number', ''))} {row.get('馬名', row.get('horse_name', ''))}".strip()
+        for _, row in sorted_table.iterrows()
+    ]
+    if horse_options:
+        selected = st.selectbox("詳細を確認する馬", horse_options, key="prediction_detail_horse")
+        selected_index = horse_options.index(selected)
+        selected_row = sorted_table.iloc[selected_index]
+        st.markdown("**寄与度**")
+        show_dataframe_safe(contribution_table_from_row(selected_row), width="stretch", hide_index=True)
+        detail_rows = [
+            {"区分": "能力評価", "内容": selected_row.get("ability_layer_score", "")},
+            {"区分": "適性評価", "内容": selected_row.get("suitability_layer_score", "")},
+            {"区分": "補正内容", "内容": selected_row.get("prediction_confidence_reason", "")},
+            {"区分": "AI短評", "内容": selected_row.get("ai_short_comment", selected_row.get("AI短評", ""))},
+        ]
+        show_dataframe_safe(pd.DataFrame(detail_rows), width="stretch", hide_index=True)
 
     logs = prediction.get("simulation_logs", [])
     if logs:

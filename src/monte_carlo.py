@@ -28,6 +28,11 @@ from simulator import RaceSimulator
 from ml_model import TOP3_MODEL_PATH, WIN_MODEL_PATH, apply_ml_prediction, load_model
 from weight_optimizer import apply_prediction_weights, load_model_weights
 
+try:
+    from prediction_explainability import enhance_prediction_table
+except Exception:  # pragma: no cover - keep Monte Carlo import-safe.
+    enhance_prediction_table = None  # type: ignore[assignment]
+
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +82,33 @@ PREDICTION_COLUMNS = [
     "trend_match_comment",
     "weight_penalty",
     "mud_aptitude",
+    "field_strength_score",
+    "track_speed_index",
+    "track_speed_score",
+    "track_speed_category",
+    "racing_affiliation",
+    "所属区分",
+    "最高レース格",
+    "平均レースレベル",
+    "中央地方補正",
+    "Prediction Confidence",
+    "prediction_confidence",
+    "prediction_confidence_score",
+    "prediction_confidence_stars",
+    "prediction_confidence_reason",
+    "contribution_details",
+    "ability_layer_score",
+    "suitability_layer_score",
+    "explainable_ai_score",
+    "ai_short_comment",
+    "AI順位",
+    "AIスコア",
+    "勝率",
+    "連対率",
+    "複勝率",
+    "期待値",
+    "予想理由",
+    "AI短評",
     "finish_score",
     "margin_score",
     "time_score",
@@ -645,6 +677,17 @@ def _build_prediction_table(
         ascending=[False, False, False, True],
     ).reset_index(drop=True)
     table["印"] = _assign_marks(table)
+    if enhance_prediction_table is not None:
+        try:
+            table = enhance_prediction_table(
+                table,
+                [data["ability"] for data in aggregates.values()],
+                config.to_dict(),
+                recalc_score=True,
+            )
+            table["印"] = _assign_marks(table)
+        except Exception:
+            logger.exception("Prediction explainability enhancement failed")
     return table[PREDICTION_COLUMNS]
 
 

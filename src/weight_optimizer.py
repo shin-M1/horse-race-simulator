@@ -202,6 +202,53 @@ def apply_prediction_weights(table: pd.DataFrame, weights: dict[str, Any] | None
         raise
 
 
+def walk_forward_validation(
+    evaluation_logs: list[dict[str, Any]] | pd.DataFrame,
+    *,
+    min_train_races: int = 1,
+) -> list[dict[str, Any]]:
+    """Build leakage-free rolling validation splits by race year.
+
+    Each validation year only uses races dated before that year for training.
+    This helper intentionally returns split metadata; callers can run the
+    expensive optimization per split only in local/high-quality workflows.
+    """
+    if isinstance(evaluation_logs, pd.DataFrame):
+        frame = evaluation_logs.copy()
+    else:
+        frame = build_training_dataset(evaluation_logs)
+    if frame.empty or "race_date" not in frame.columns:
+        return []
+
+    work = frame.copy()
+    work["_race_date"] = pd.to_datetime(work["race_date"], errors="coerce")
+    work = work.dropna(subset=["_race_date"]).sort_values("_race_date")
+    if work.empty:
+        return []
+    splits: list[dict[str, Any]] = []
+    for validation_year in sorted(int(year) for year in work["_race_date"].dt.year.unique())[1:]:
+        train = work[work["_race_date"].dt.year < validation_year]
+        validation = work[work["_race_date"].dt.year == validation_year]
+        if train["race_id"].nunique() < min_train_races or validation.empty:
+            continue
+        max_train_date = train["_race_date"].max()
+        min_validation_date = validation["_race_date"].min()
+        splits.append(
+            {
+                "train_end_year": validation_year - 1,
+                "validation_year": validation_year,
+                "train_count": int(len(train)),
+                "validation_count": int(len(validation)),
+                "train_race_count": int(train["race_id"].nunique()),
+                "validation_race_count": int(validation["race_id"].nunique()),
+                "max_train_date": max_train_date.date().isoformat(),
+                "min_validation_date": min_validation_date.date().isoformat(),
+                "leakage_free": bool(max_train_date < min_validation_date),
+            }
+        )
+    return splits
+
+
 def _apply_prediction_weights_impl(table: pd.DataFrame, weights: dict[str, Any] | None = None) -> pd.DataFrame:
     if table.empty:
         return table.copy()

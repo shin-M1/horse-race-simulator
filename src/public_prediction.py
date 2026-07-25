@@ -11,6 +11,11 @@ try:
 except Exception:  # pragma: no cover - trend scoring is optional in public mode.
     compute_race_trend_match_score = None  # type: ignore[assignment]
 
+try:
+    from prediction_explainability import enhance_prediction_table
+except Exception:  # pragma: no cover - keep public mode import-safe.
+    enhance_prediction_table = None  # type: ignore[assignment]
+
 
 ABILITY_SCORE_WEIGHTS = {
     "horse_ability_score": 0.35,
@@ -85,6 +90,20 @@ COMPATIBILITY_COLUMNS = [
     "jockey_score",
     "weight_penalty",
     "mud_aptitude",
+    "field_strength_score",
+    "track_speed_index",
+    "track_speed_score",
+    "track_speed_category",
+    "racing_affiliation",
+    "prediction_confidence",
+    "prediction_confidence_score",
+    "prediction_confidence_stars",
+    "prediction_confidence_reason",
+    "contribution_details",
+    "ability_layer_score",
+    "suitability_layer_score",
+    "explainable_ai_score",
+    "ai_short_comment",
 ]
 
 
@@ -258,6 +277,9 @@ def build_public_prediction_result(
         ["AIスコア", "能力スコア", "今回条件適性スコア"],
         ascending=[False, False, False],
     ).reset_index(drop=True)
+    if enhance_prediction_table is not None:
+        table = enhance_prediction_table(table, abilities, race_config, horses, recalc_score=True)
+        table["AIスコア"] = table["prediction_score"]
     table["予想着順"] = [index + 1 for index in range(len(table))]
     table["印"] = _assign_marks(len(table))
     probabilities = estimate_probabilities_from_scores(table["AIスコア"].astype(float).tolist(), temperature=temperature)
