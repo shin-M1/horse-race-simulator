@@ -209,6 +209,10 @@ def build_prediction_confidence(ability: Any, race_config: dict[str, Any] | None
     score = 100.0
 
     recent_count = len(races)
+    history_status = ability.get("history_fetch_status") if isinstance(ability, dict) else getattr(ability, "history_fetch_status", "ok")
+    if history_status == "failed":
+        score = 25.0
+        reasons.append("近走取得失敗（実績未確認）")
     if recent_count < 5:
         penalty = (5 - recent_count) * 8.0
         score -= penalty
@@ -325,6 +329,45 @@ def build_shap_like_contributions(
     return rounded
 
 
+def prepare_prediction_features(
+    abilities: list[Any],
+    race_config: dict[str, Any],
+    horses: list[dict[str, Any]],
+    progress_callback: Any = None,
+) -> dict[int, dict[str, Any]]:
+    """Compute history-derived inputs before either prediction engine runs."""
+    lookup = ability_lookup_by_number(abilities)
+    horse_lookup = horse_lookup_by_number(horses)
+    prepared = {}
+    if progress_callback:
+        progress_callback("STEP6 中央地方補正")
+    for number, ability in lookup.items():
+        races = recent_races_from_ability(ability)
+        strengths = [field_strength_score(race) for race in races]
+        affiliations = [classify_racing_affiliation(race) for race in races]
+        prepared[number] = {
+            "strength_values": strengths,
+            "affiliations": affiliations,
+            "central_local_bonus": central_local_adjustment_score(affiliations, strengths),
+        }
+    if progress_callback:
+        progress_callback("STEP7 タイム指数")
+    for number, ability in lookup.items():
+        races = recent_races_from_ability(ability)
+        prepared[number]["track_profiles"] = [compute_track_speed_index(race, races) for race in races]
+    if progress_callback:
+        progress_callback("STEP8 信頼度")
+    for number, ability in lookup.items():
+        prepared[number]["confidence"] = build_prediction_confidence(ability, race_config, horse_lookup.get(number, {}))
+    if progress_callback:
+        progress_callback("STEP9 AIスコア")
+    for number, ability in lookup.items():
+        prepared[number]["contributions"] = build_shap_like_contributions(
+            ability, race_config, prepared[number]["confidence"], recent_races_from_ability(ability),
+        )
+    return prepared
+
+
 def enhance_prediction_table(
     prediction_table: pd.DataFrame,
     abilities: list[Any] | None,
@@ -332,12 +375,15 @@ def enhance_prediction_table(
     horses: list[dict[str, Any]] | None = None,
     *,
     recalc_score: bool = True,
+    prepared_features: dict[int, dict[str, Any]] | None = None,
 ) -> pd.DataFrame:
     if prediction_table is None or prediction_table.empty:
         return prediction_table
     race_config = dict(race_config or {})
     ability_lookup = ability_lookup_by_number(abilities or [])
     horse_lookup = horse_lookup_by_number(horses or [])
+    if prepared_features is None:
+        prepared_features = prepare_prediction_features(abilities or [], race_config, horses or [])
     result = prediction_table.copy()
     rows: list[dict[str, Any]] = []
     for _, row in result.iterrows():
@@ -345,16 +391,17 @@ def enhance_prediction_table(
         ability = ability_lookup.get(horse_number, row.to_dict())
         horse_meta = horse_lookup.get(horse_number, {})
         races = recent_races_from_ability(ability)
-        strength_values = [field_strength_score(race) for race in races]
+        prepared = prepared_features.get(horse_number, {})
+        strength_values = prepared.get("strength_values", [field_strength_score(race) for race in races])
         avg_strength = sum(strength_values) / len(strength_values) if strength_values else _row_number(row, "race_strength_score", 50.0)
-        affiliations = [classify_racing_affiliation(race) for race in races]
+        affiliations = prepared.get("affiliations", [classify_racing_affiliation(race) for race in races])
         primary_affiliation = most_common(affiliations) if affiliations else "不明"
-        central_local_bonus = central_local_adjustment_score(affiliations, strength_values)
-        track_profiles = [compute_track_speed_index(race, races) for race in races]
+        central_local_bonus = prepared.get("central_local_bonus", central_local_adjustment_score(affiliations, strength_values))
+        track_profiles = prepared["track_profiles"] if prepared else [compute_track_speed_index(race, races) for race in races]
         track_score = sum(float(item["track_speed_score"]) for item in track_profiles) / len(track_profiles) if track_profiles else 50.0
         track_index = sum(float(item["track_speed_index"]) for item in track_profiles) / len(track_profiles) if track_profiles else 0.0
-        confidence = build_prediction_confidence(ability, race_config, horse_meta)
-        contributions = build_shap_like_contributions(ability, race_config, confidence, races)
+        confidence = prepared["confidence"] if prepared else build_prediction_confidence(ability, race_config, horse_meta)
+        contributions = prepared["contributions"] if prepared else build_shap_like_contributions(ability, race_config, confidence, races)
         explainable_score = float(contributions["最終AIスコア"])
         existing_score = _row_number(row, "prediction_score", _row_number(row, "score", explainable_score))
         combined_score = clamp(existing_score * 0.55 + explainable_score * 0.45) if recalc_score else existing_score

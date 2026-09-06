@@ -197,6 +197,7 @@ def _run_monte_carlo_prediction_impl(
     store_simulation_history: bool = True,
     max_stored_trials: int | None = None,
     save_outputs: bool = True,
+    prepared_features: dict[int, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Run repeated race simulations and aggregate finish-position probabilities."""
     _log_memory(
@@ -217,6 +218,7 @@ def _run_monte_carlo_prediction_impl(
 
     if abilities is None:
         provider = load_provider(None, None)
+        provider.set_race_entries(entries)
         abilities = HorseAnalyzer(provider, config).analyze_many(entries)
     if pace is None:
         pace = PacePredictor().predict(abilities)
@@ -269,7 +271,7 @@ def _run_monte_carlo_prediction_impl(
             logs.append(f"{trial_index + 1}/{n_simulations} simulations completed")
         _log_memory("MonteCarlo trial completed", trial=trial_index + 1, total=n_simulations)
 
-    prediction_table = _build_prediction_table(config, aggregates, horse_count, pace, trend_analysis=trend_analysis)
+    prediction_table = _build_prediction_table(config, aggregates, horse_count, pace, trend_analysis=trend_analysis, prepared_features=prepared_features)
     active_engine = str(prediction_engine or "rule_based")
     if active_engine == "optimized_weights":
         prediction_table = apply_prediction_weights(prediction_table, prediction_weights or load_model_weights())
@@ -559,6 +561,7 @@ def _build_prediction_table(
     horse_count: int,
     pace: RacePace | None = None,
     trend_analysis: dict[str, Any] | None = None,
+    prepared_features: dict[int, dict[str, Any]] | None = None,
 ) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     course_bias = get_course_bias(config)
@@ -684,6 +687,7 @@ def _build_prediction_table(
                 [data["ability"] for data in aggregates.values()],
                 config.to_dict(),
                 recalc_score=True,
+                prepared_features=prepared_features,
             )
             table["印"] = _assign_marks(table)
         except Exception:

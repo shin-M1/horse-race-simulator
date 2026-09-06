@@ -39,8 +39,8 @@ class DatabaseEloOptimizerTest(unittest.TestCase):
             original = horse_database.HORSE_DB_DIR
             horse_database.HORSE_DB_DIR = Path(directory)
             try:
-                horse_database.save_horse_profile("テストホース", {"recent_races": [{"race_name": "A"}]})
-                loaded = horse_database.load_horse_profile("テストホース")
+                horse_database.save_horse_profile("テストホース", {"recent_races": [{"race_name": "A", "distance": 1600, "finish": 1}]}, horse_id="2020000001")
+                loaded = horse_database.load_horse_profile("テストホース", horse_id="2020000001")
             finally:
                 horse_database.HORSE_DB_DIR = original
             self.assertIsNotNone(loaded)
@@ -76,14 +76,14 @@ class DatabaseEloOptimizerTest(unittest.TestCase):
 
         def fetcher() -> dict:
             calls["count"] += 1
-            return {"recent_races": [{"race_name": "A"}]}
+            return {"recent_races": [{"race_name": "A", "distance": 1600, "finish": 1}]}
 
         with tempfile.TemporaryDirectory() as directory:
             original = horse_database.HORSE_DB_DIR
             horse_database.HORSE_DB_DIR = Path(directory)
             try:
-                first = horse_database.get_or_fetch_horse_profile("CacheHorse", fetcher)
-                second = horse_database.get_or_fetch_horse_profile("CacheHorse", fetcher)
+                first = horse_database.get_or_fetch_horse_profile("CacheHorse", fetcher, horse_id="2020000001")
+                second = horse_database.get_or_fetch_horse_profile("CacheHorse", fetcher, horse_id="2020000001")
             finally:
                 horse_database.HORSE_DB_DIR = original
         self.assertEqual(calls["count"], 1)

@@ -53,6 +53,8 @@ def dataframe_to_horses(df: pd.DataFrame, count: int | None = None) -> list[dict
         horse_number = _to_int(row.get("horse_number", 0))
         carried_weight = _to_float(row.get("carried_weight", 56.0), 56.0)
         jockey = str(row.get("jockey", "")).strip()
+        horse_id = str(row.get("horse_id", "")).strip()
+        horse_url = str(row.get("horse_url", "")).strip()
         if not name and frame == 0 and horse_number == 0:
             continue
         horses.append(
@@ -62,6 +64,8 @@ def dataframe_to_horses(df: pd.DataFrame, count: int | None = None) -> list[dict
                 "horse_number": horse_number,
                 "carried_weight": carried_weight,
                 "jockey": jockey,
+                "horse_id": horse_id,
+                "horse_url": horse_url,
             }
         )
     return horses

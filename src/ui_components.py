@@ -71,6 +71,8 @@ def default_horse_dataframe(count: int = 5) -> pd.DataFrame:
             "horse_number": list(range(1, count + 1)),
             "carried_weight": [56.0] * count,
             "jockey": [""] * count,
+            "horse_id": [""] * count,
+            "horse_url": [""] * count,
         }
     )
 
@@ -117,7 +119,10 @@ def render_horse_editor(
                 "斤量 (kg)", min_value=40.0, max_value=65.0, step=0.5, format="%.1f", required=True
             ),
             "jockey": st.column_config.TextColumn("騎手"),
+            "horse_id": st.column_config.TextColumn("horse_id"),
+            "horse_url": st.column_config.LinkColumn("horse_url"),
         },
+        disabled=["horse_id", "horse_url"],
         key=key,
     )
 
@@ -137,6 +142,8 @@ def _normalize_horse_dataframe(
         "horse_number": 1,
         "carried_weight": 56.0,
         "jockey": "",
+        "horse_id": "",
+        "horse_url": "",
     }
     for column, default in defaults.items():
         if column not in frame.columns:

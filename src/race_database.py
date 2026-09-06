@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from cache_utils import DATA_DIR, is_fresh, read_json, safe_key, utc_now_iso, write_json
+from data_fetcher import is_valid_horse_id
 
 
 RACE_DB_DIR = DATA_DIR / "race_database"
@@ -42,6 +43,10 @@ def get_or_fetch_race_data(
 ) -> dict[str, Any] | None:
     key = race_db_key(race_id, race_name, race_date)
     cached = load_race_cache(key)
+    if cached and not all(is_valid_horse_id(entry.get("horse_id")) for entry in cached.get("fetched_entries", [])):
+        cached = None  # Refresh legacy cards that discarded horse links.
+    if cached and not cached.get("fetched_entries"):
+        cached = None
     if cached and not force_refresh and is_fresh(cached.get("updated_at"), max_age_days):
         cached["_database_status"] = "hit"
         return cached

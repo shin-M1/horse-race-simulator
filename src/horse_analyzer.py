@@ -708,10 +708,22 @@ class HorseAbility:
     debug_mid_ratios: list[float] = field(default_factory=list)
     debug_last_corner_ratios: list[float] = field(default_factory=list)
     field_size_warnings: list[str] = field(default_factory=list)
+    history_confidence: float = 100.0
+    history_fetch_status: str = "ok"
+    history_fetch_error: str = ""
+    recent_race_count: int = 0
+    horse_id: str = ""
+    horse_url: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "horse_name": self.horse_name,
+            "history_confidence": self.history_confidence,
+            "history_fetch_status": self.history_fetch_status,
+            "history_fetch_error": self.history_fetch_error,
+            "recent_race_count": self.recent_race_count,
+            "horse_id": self.horse_id,
+            "horse_url": self.horse_url,
             "frame": self.frame,
             "horse_number": self.horse_number,
             "carried_weight": round(self.carried_weight, 1),
@@ -1364,6 +1376,9 @@ class HorseAnalyzer:
         self.race_config = race_config
 
     def analyze(self, horse: HorseEntry) -> HorseAbility:
+        return self._analyze_results(horse, self.fetch_recent_results(horse))
+
+    def fetch_recent_results(self, horse: HorseEntry) -> list[RaceResult]:
         try:
             style_results = self.provider.get_recent_results(horse.horse_name, limit=10)
         except RaceDataFetchError:
@@ -1393,6 +1408,10 @@ class HorseAnalyzer:
                 debug_records=debug_records,
             )
 
+        return style_results
+
+    def _analyze_results(self, horse: HorseEntry, style_results: list[RaceResult]) -> HorseAbility:
+        ability_results = style_results[:5]
         style = self._style_metrics(style_results)
         recency_weights = ABILITY_RECENCY_WEIGHTS[: len(ability_results)]
         level_weights = [race_level_weight(race) for race in ability_results]
@@ -1555,17 +1574,60 @@ class HorseAnalyzer:
             debug_mid_ratios=style.debug_mid_ratios,
             debug_last_corner_ratios=style.debug_last_corner_ratios,
             field_size_warnings=style.field_size_warnings,
+            recent_race_count=len(style_results),
+            horse_id=horse.horse_id,
+            horse_url=horse.horse_url,
         )
 
-    def analyze_many(self, horses: list[HorseEntry]) -> list[HorseAbility]:
+    def analyze_many(self, horses: list[HorseEntry], progress_callback: Any = None) -> list[HorseAbility]:
         try:
-            return self._analyze_many_impl(horses)
+            return self._analyze_many_impl(horses, progress_callback)
         except Exception:
             logger.exception("HorseAnalyzer.analyze_many failed")
             raise
 
-    def _analyze_many_impl(self, horses: list[HorseEntry]) -> list[HorseAbility]:
-        abilities = [self.analyze(horse) for horse in horses]
+    def _analyze_many_impl(self, horses: list[HorseEntry], progress_callback: Any = None) -> list[HorseAbility]:
+        if progress_callback:
+            progress_callback("STEP3 horse_id確認")
+        for horse in horses:
+            logger.info("[Horse] name=%s horse_id=%s horse_url=%s", horse.horse_name, horse.horse_id, horse.horse_url)
+        if progress_callback:
+            progress_callback("STEP4 各馬近走取得")
+        histories = []
+        for horse in horses:
+            try:
+                histories.append((horse, self.fetch_recent_results(horse), None))
+            except RaceDataFetchError as exc:
+                logger.warning("[HorseHistory Failed] name=%s horse_id=%s error=%s", horse.horse_name, horse.horse_id, exc)
+                histories.append((horse, [], exc))
+        if histories and not any(rows for _, rows, _ in histories):
+            raise RaceDataFetchError(
+                "全馬の近走が0件です。近走取得処理そのものが失敗している可能性があります。horse_id・URL・HTTP応答・HTML解析を確認してください。",
+                debug_records=self.provider.get_fetch_debug() if hasattr(self.provider, "get_fetch_debug") else [],
+            )
+        if progress_callback:
+            progress_callback("STEP5 近走特徴量作成")
+        abilities = []
+        for horse, rows, error in histories:
+            if error is None:
+                abilities.append(self._analyze_results(horse, rows))
+            else:
+                # Missing history stays empty; only unsupported feature estimates are neutral.
+                neutral = self._analyze_results(horse, [])
+                neutral_features = {key: 50.0 for key in (
+                    "early_speed", "stamina", "acceleration", "consistency",
+                    "horse_ability_score", "base_ability_score", "race_power", "avg_race_score",
+                    "avg_opponent_strength_score", "race_level_score", "race_strength_adjusted_score",
+                    "recent_time_score", "time_score", "finish_score", "margin_score",
+                    "late_kick_score", "late_gain_score", "last3f_score", "last3f_consistency",
+                    "early_push_score", "mid_cruise_score", "fade_resistance_score",
+                    "sustain_speed_score", "pace_resilience_score",
+                )}
+                abilities.append(replace(
+                    neutral, **neutral_features, history_confidence=0.0,
+                    history_fetch_status="failed", history_fetch_error=str(error),
+                    time_reliability=0.0, agari_reliability=0.0,
+                ))
         elo_rows: list[dict[str, Any]] = []
         for ability in abilities:
             for race in reversed(ability.recent_results):

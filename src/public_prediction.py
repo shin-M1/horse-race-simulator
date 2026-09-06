@@ -200,6 +200,7 @@ def build_public_prediction_result(
     trend_analysis: dict[str, Any] | None = None,
     seed: int | None = 42,
     temperature: float = 12.0,
+    prepared_features: dict[int, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Build a Cloud-safe prediction result without Monte Carlo or timeline generation."""
     rows: list[dict[str, Any]] = []
@@ -278,7 +279,7 @@ def build_public_prediction_result(
         ascending=[False, False, False],
     ).reset_index(drop=True)
     if enhance_prediction_table is not None:
-        table = enhance_prediction_table(table, abilities, race_config, horses, recalc_score=True)
+        table = enhance_prediction_table(table, abilities, race_config, horses, recalc_score=True, prepared_features=prepared_features)
         table["AIスコア"] = table["prediction_score"]
     table["予想着順"] = [index + 1 for index in range(len(table))]
     table["印"] = _assign_marks(len(table))

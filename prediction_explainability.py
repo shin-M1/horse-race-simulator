@@ -19,6 +19,7 @@ from src.prediction_explainability import (  # noqa: E402,F401
     contribution_table_from_row,
     enhance_prediction_table,
     field_strength_score,
+    prepare_prediction_features,
     walk_forward_validation_splits,
 )
 
@@ -34,5 +35,6 @@ __all__ = [
     "contribution_table_from_row",
     "enhance_prediction_table",
     "field_strength_score",
+    "prepare_prediction_features",
     "walk_forward_validation_splits",
 ]

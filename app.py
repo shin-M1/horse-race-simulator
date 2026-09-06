@@ -130,6 +130,7 @@ from prediction_explainability import (
     build_prediction_confidence_table,
     build_prediction_reason_table,
     contribution_table_from_row,
+    prepare_prediction_features,
 )
 from race_data_fetcher import load_prediction_race_data
 from race_database import get_or_fetch_race_data
@@ -177,16 +178,19 @@ def cached_prediction_race_data(
 ) -> dict[str, Any] | None:
     # Pre-race loading deliberately has no dependency on fetch_race_result.
     if use_local_database:
-        return get_or_fetch_race_data(
+        fetched = get_or_fetch_race_data(
             race_name=race_name,
             race_date=race_date,
             race_id=None,
             fetcher_func=lambda: load_prediction_race_data(race_name, race_date),
             force_refresh=force_refresh_data,
         )
-    fetched = load_prediction_race_data(race_name, race_date)
-    if isinstance(fetched, dict):
-        fetched["_database_status"] = "disabled"
+    else:
+        fetched = load_prediction_race_data(race_name, race_date)
+        if isinstance(fetched, dict):
+            fetched["_database_status"] = "disabled"
+    if not isinstance(fetched, dict) or not fetched.get("fetched_entries"):
+        raise RaceDataFetchError("出走馬一覧を取得できませんでした。空データはキャッシュしません。")
     return fetched
 
 
@@ -539,6 +543,7 @@ def run_public_prediction_analysis(
     use_local_database: bool = True,
     force_refresh_data: bool = False,
     seed: int | None = 42,
+    progress_callback: Any = None,
 ) -> dict[str, Any]:
     """Fetch recent races and analyze horses without creating timelines or videos."""
     if seed is not None:
@@ -548,9 +553,11 @@ def run_public_prediction_analysis(
     provider = simulation_main.load_provider(provider_module, provider_factory, use_local_database, force_refresh_data)
     if not getattr(provider, "_codex_provider_adapter", False):
         provider = simulation_main._wrap_provider(provider, use_local_database, force_refresh_data)
+    provider.set_race_entries(entries)
+    logger.info("[Prediction] race_id=%s entries=%d", race_config.get("race_id", ""), len(entries))
 
     analyzer = HorseAnalyzer(provider, config)
-    abilities = analyzer.analyze_many(entries)
+    abilities = analyzer.analyze_many(entries, progress_callback=progress_callback)
     ability_table = analyzer.to_dataframe(abilities)
     if "actual_running_style" not in ability_table.columns and "primary_running_style" in ability_table.columns:
         ability_table["actual_running_style"] = ability_table["primary_running_style"]
@@ -787,6 +794,11 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
         provider_module = st.text_input("provider module", value="", placeholder="例: my_fetcher")
         provider_factory = st.text_input("factory name", value="", placeholder="例: get_provider")
         st.caption("未入力の場合はnetkeibaから実データを取得します。取得できない馬名では停止します。")
+    if debug_mode and st.sidebar.button("空の近走キャッシュだけ削除"):
+        from horse_database import clear_empty_horse_history_cache
+
+        removed = clear_empty_horse_history_cache()
+        st.sidebar.success(f"空キャッシュを{len(removed)}件削除しました。")
 
     horse_df = render_horse_editor(
         initial_count=max(2, len(initial_entries) if initial_entries else 5),
@@ -894,7 +906,7 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
 
         st.session_state.pop("simulation_result", None)
         try:
-            validation = run_step("STEP1 入力確認", lambda: validate_inputs(race_config, horses))
+            validation = run_step("STEP1 対象レース・入力確認", lambda: validate_inputs(race_config, horses))
             if not validation.is_valid:
                 for error in validation.errors:
                     st.error(error)
@@ -912,6 +924,7 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
                             use_local_database=use_local_database,
                             force_refresh_data=force_refresh_data,
                             seed=42,
+                            progress_callback=mark_step,
                         )
                     return run_race_simulation(
                         race_config=race_config,
@@ -930,10 +943,12 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
                         save_timeline_csv=bool(mode_settings["save_timeline_csv"]),
                         use_local_database=use_local_database,
                         force_refresh_data=force_refresh_data,
+                        progress_callback=mark_step,
                     )
 
-            result = run_step("STEP2 データ取得", execute_base_simulation)
-            run_step("STEP3 HorseAnalyzer", lambda: ensure_recent_races_exist(result))
+            mark_step("STEP2 出走馬一覧確認")
+            result = execute_base_simulation()
+            ensure_recent_races_exist(result)
             effective_monte_carlo_runs = 0
             trend_data_used = False
             trend_analysis = None
@@ -967,7 +982,7 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
                         raise
                     return local_trend_analysis, local_trend_data_used
 
-                trend_analysis, trend_data_used = run_step("STEP4 Trend", load_trend_step)
+                trend_analysis, trend_data_used = run_step("STEP5-1 保存済み傾向・重み読み込み", load_trend_step)
                 race_config_for_prediction = dict(race_config)
                 if isinstance(trend_analysis, dict):
                     race_config_for_prediction["same_race_trend_analysis"] = trend_analysis
@@ -977,13 +992,10 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
                     else min(int(n_simulations), int(mode_settings["monte_carlo_runs"]))
                 )
 
-                active_weights = run_step("STEP5 WeightOptimizer", lambda: current_weights)
-                run_step(
-                    "STEP6 Elo",
-                    lambda: [
-                        getattr(ability, "normalized_elo_score", None)
-                        for ability in (result.get("abilities") or [])
-                    ],
+                active_weights = current_weights
+                prepared_features = prepare_prediction_features(
+                    result.get("abilities") or [], race_config_for_prediction, horses,
+                    progress_callback=mark_step,
                 )
 
                 def build_prediction_inputs() -> dict[str, Any]:
@@ -996,6 +1008,7 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
                             "prediction_weights": active_weights,
                             "trend_analysis": trend_analysis,
                             "seed": int(prediction_seed),
+                            "prepared_features": prepared_features,
                         }
                     return {
                         "race_config": race_config_for_prediction,
@@ -1011,11 +1024,12 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
                         "store_trial_timelines": bool(mode_settings["store_trial_timelines"]),
                         "store_simulation_history": bool(mode_settings.get("store_simulation_history", True)),
                         "save_outputs": True,
+                        "prepared_features": prepared_features,
                     }
 
-                prediction_inputs = run_step("STEP7-1 入力生成", build_prediction_inputs)
+                prediction_inputs = run_step("STEP10-1 予想入力生成", build_prediction_inputs)
                 if public_prediction_active:
-                    mark_step("STEP7-2 公開版AI予想開始")
+                    mark_step("STEP10-2 公開版AI予想開始")
                     st.warning("Cloud公開版では安定性優先のためMonte Carloをスキップしています。")
                     logger.info(
                         "Skipping Monte Carlo in public prediction mode: horses=%s cloud=%s public_only=%s",
@@ -1025,13 +1039,13 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
                     )
                     monte_carlo_prediction = build_public_prediction_result(**prediction_inputs)
                 else:
-                    mark_step("STEP7-2 Monte Carlo開始")
+                    mark_step("STEP10-2 Monte Carlo開始")
                     try:
                         with st.spinner("Monte Carlo予想を実行中です..."):
                             monte_carlo_prediction = run_monte_carlo_prediction(**prediction_inputs)
                     except Exception as exc:
-                        st.session_state["prediction_failed_step"] = "STEP7-2 Monte Carlo開始"
-                        logger.exception("STEP7-2 run_monte_carlo failed")
+                        st.session_state["prediction_failed_step"] = "STEP10-2 Monte Carlo開始"
+                        logger.exception("STEP10-2 run_monte_carlo failed")
                         render_monte_carlo_failure_debug(
                             exc,
                             horse_count=len(horses),
@@ -1054,10 +1068,10 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
                         else:
                             raise
 
-                mark_step("STEP7-3 予想計算終了")
+                mark_step("STEP10-3 予想計算終了")
                 if not is_valid_monte_carlo_result(monte_carlo_prediction):
                     invalid_error = ValueError("Monte Carlo result is empty or missing required columns")
-                    logger.error("STEP7-3 invalid prediction result: %s", invalid_error)
+                    logger.error("STEP10-3 invalid prediction result: %s", invalid_error)
                     if lightweight_mode:
                         st.warning("Monte Carlo結果が空または不正形式だったため、Cloud軽量モードの簡易シミュレーション結果を表示しています。")
                         monte_carlo_prediction = build_public_prediction_result(
@@ -1073,7 +1087,7 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
                         raise invalid_error
 
                 result["prediction"] = monte_carlo_prediction
-                mark_step("STEP7-4 DataFrame生成")
+                mark_step("STEP10-4 DataFrame生成")
                 _merge_prediction_trend_columns(result)
                 result["prediction_engine_requested"] = prediction_engine_requested
                 result["prediction_engine"] = result["prediction"].get("prediction_engine", active_prediction_engine)
@@ -1095,11 +1109,11 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
                         if result["prediction"].get("fallback")
                         else "Monte Carlo trial with highest AI expected value"
                     )
-                mark_step("STEP7-5 結果表示")
+                mark_step("STEP10-5 結果表示")
                 prediction_table_for_display = _prediction_table(result)
                 if not isinstance(prediction_table_for_display, pd.DataFrame) or prediction_table_for_display.empty:
                     raise ValueError("AI予想ランキングの表示用DataFrameを作成できませんでした。")
-            mark_step("STEP8 Result")
+            mark_step("STEP11 結果表示")
             if not isinstance(result.get("single_result"), pd.DataFrame):
                 result["single_result"] = build_single_race_result_from_timeline(
                     result.get("race_timeline", []),
@@ -2216,13 +2230,22 @@ def _safe_int_app(value: Any, default: int = 0) -> int:
 
 
 def ensure_recent_races_exist(result: dict[str, object]) -> None:
+    missing = []
+    total_count = 0
     for item in result.get("recent_races", []):
         if not isinstance(item, dict):
             continue
         horse_name = str(item.get("horse_name", ""))
         recent_races = item.get("recent_races", [])
+        total_count += len(recent_races or [])
         if not recent_races:
-            raise RaceDataFetchError(f"{horse_name} の近走データが取得できませんでした。")
+            missing.append(horse_name)
+    result["recent_fetch_missing_horses"] = missing
+    if total_count == 0:
+        raise RaceDataFetchError(
+            "全馬の近走が0件です。近走取得処理そのものが失敗している可能性があります。horse_id・URL・HTTP応答・HTML解析を確認してください。",
+            debug_records=result.get("fetch_debug", []),
+        )
 
 
 def animation_mode_key(label: str) -> str:
@@ -2236,6 +2259,9 @@ def animation_mode_key(label: str) -> str:
 def render_results(result: dict[str, object], debug_mode: bool = False, prediction_sort: str = "prediction_score") -> None:
     horse_analysis = result["horse_analysis"]
     pace_prediction = result["pace_prediction"]
+    missing = result.get("recent_fetch_missing_horses", [])
+    if missing:
+        st.warning("近走取得失敗のため信頼度を下げて評価した馬: " + "、".join(missing))
     if result.get("lightweight_mode"):
         st.info("軽量モードで実行しました。予想実行時の動画生成・過去10年新規取得・音声/BGM生成は省略しています。")
     if result.get("public_prediction_mode"):
@@ -2673,6 +2699,16 @@ def render_fetch_debug(result: dict[str, object]) -> None:
         st.info("データ取得デバッグ情報がありません。既存の取得プロバイダで raw_race_df などを保持している場合は自動表示されます。")
         return
 
+    show_dataframe_safe(pd.DataFrame([
+        {
+            "馬名": record.get("input_horse_name", ""),
+            "horse_id": record.get("horse_id", ""),
+            "近走取得件数": record.get("recent_count", len(record.get("recent_races") or [])),
+            "HTTP status": record.get("http_status", ""),
+            "失敗段階": record.get("failure_stage", ""),
+        }
+        for record in records if isinstance(record, dict)
+    ]), width="stretch", hide_index=True)
     for record in records:
         if not isinstance(record, dict):
             continue
@@ -2709,6 +2745,12 @@ def render_fetch_debug(result: dict[str, object]) -> None:
             db_cols[1].metric("fetch回数", int(record.get("fetch_count", 0) or 0))
             db_cols[2].write("DB保存先")
             db_cols[2].code(str(record.get("horse_database_path", "-") or "-"), language="text")
+            st.json({key: record.get(key, "") for key in (
+                "http_status", "final_url", "html_bytes", "title", "parse_rows",
+                "parser_status", "failure_stage", "error", "horse_id_valid",
+            )})
+            if record.get("debug_logs"):
+                st.code("\n".join(record["debug_logs"]), language="text")
 
             st.markdown("**raw_race_df（分析に使う前の生データ）**")
             render_debug_table_like(record.get("raw_race_df"))

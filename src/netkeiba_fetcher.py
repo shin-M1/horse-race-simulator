@@ -114,6 +114,8 @@ class NetkeibaRaceFetcher:
         raw_frame = _find_table(html_text, required_groups=[("馬名",), ("馬番",), ("騎手",), ("斤量",)])
         entries = [] if raw_frame is None else [_parse_entry_row(row) for _, row in raw_frame.iterrows()]
         entries = [entry for entry in entries if entry.get("horse_name") and entry.get("horse_number")]
+        horse_links = _extract_entry_horse_links(html_text, final_url)
+        _merge_horse_ids_into_entries(entries, horse_links)
         self.last_debug = {
             "operation": "fetch_race_entries",
             "race_id": race_id,
@@ -121,6 +123,8 @@ class NetkeibaRaceFetcher:
             "source_url": final_url,
             "raw_dataframe": raw_frame if raw_frame is not None else pd.DataFrame(),
             "parsed_entries": entries,
+            "horse_id_count": sum(1 for entry in entries if entry.get("horse_id")),
+            "horse_links": horse_links,
             "parsed_results": [],
             "race_metadata": {},
         }
@@ -360,6 +364,53 @@ def _margin_to_seconds(value: Any) -> float | None:
 def _normalize_race_class(value: str) -> str:
     upper = value.upper()
     return upper.replace("GⅠ", "G1").replace("GⅡ", "G2").replace("GⅢ", "G3").replace("リステッド", "L")
+
+
+def _extract_entry_horse_links(html_text: str, base_url: str) -> list[dict[str, str]]:
+    soup = BeautifulSoup(html_text, "lxml")
+    links: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for anchor in soup.select("a[href*='/horse/']"):
+        href = str(anchor.get("href", ""))
+        match = re.search(r"/horse/(\d+)/?", href)
+        if not match:
+            continue
+        horse_id = match.group(1)
+        if horse_id in seen:
+            continue
+        horse_name = _clean_text(anchor.get_text(" ", strip=True))
+        if not horse_name:
+            continue
+        links.append(
+            {
+                "horse_name": horse_name,
+                "horse_id": horse_id,
+                "horse_url": urljoin(base_url, href),
+            }
+        )
+        seen.add(horse_id)
+    return links
+
+
+def _merge_horse_ids_into_entries(entries: list[dict[str, Any]], links: list[dict[str, str]]) -> None:
+    unused_links = list(links)
+    for entry in entries:
+        entry.setdefault("horse_id", "")
+        entry.setdefault("horse_url", "")
+        entry_name = _normalize_text(entry.get("horse_name", ""))
+        matched_index = next(
+            (
+                link_index
+                for link_index, link in enumerate(unused_links)
+                if entry_name and entry_name == _normalize_text(link.get("horse_name", ""))
+            ),
+            None,
+        )
+        if matched_index is None:
+            continue
+        link = unused_links.pop(matched_index)
+        entry["horse_id"] = link.get("horse_id", "")
+        entry["horse_url"] = link.get("horse_url", "")
 
 
 _DEFAULT_FETCHER = NetkeibaRaceFetcher()

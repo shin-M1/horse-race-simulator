@@ -69,6 +69,8 @@ class HorseEntry:
     pedigree_info: dict[str, Any] | None = None
     jockey: str = ""
     jockey_score: float = 50.0
+    horse_id: str = ""
+    horse_url: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -79,6 +81,8 @@ class HorseEntry:
             "pedigree_info": self.pedigree_info,
             "jockey": self.jockey,
             "jockey_score": float(self.jockey_score),
+            "horse_id": self.horse_id,
+            "horse_url": self.horse_url,
         }
 
 

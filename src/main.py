@@ -22,7 +22,7 @@ from horse_database import get_or_fetch_horse_profile
 from pace_predictor import PacePredictor
 from race_config import RaceConfig, HorseEntry, demo_horses, prompt_horses, prompt_race_config
 from simulator import RaceSimulator
-from data_fetcher import NetkeibaRaceResultProvider
+from data_fetcher import NetkeibaRaceResultProvider, horse_url_from_id, is_valid_horse_id
 
 
 def load_provider(
@@ -55,30 +55,63 @@ def _wrap_provider(provider: Any, use_local_database: bool = False, force_refres
             self.use_local_database = bool(use_local_database)
             self.force_refresh_data = bool(force_refresh_data)
             self.fetch_count = 0
+            self.race_entries_by_name: dict[str, dict[str, Any]] = {}
+
+        def set_race_entries(self, entries: list[Any]) -> None:
+            self.race_entries_by_name = {}
+            normalized_entries: list[dict[str, Any]] = []
+            for entry in entries or []:
+                row = dict(entry) if isinstance(entry, dict) else dict(getattr(entry, "__dict__", {}))
+                if not row:
+                    continue
+                normalized_entries.append(row)
+                horse_name = str(row.get("horse_name") or row.get("name") or row.get("馬名") or "").strip()
+                if horse_name:
+                    self.race_entries_by_name[_normalize_horse_name(horse_name)] = row
+            if hasattr(self.inner_provider, "set_race_entries"):
+                self.inner_provider.set_race_entries(normalized_entries)
 
         def get_recent_results(self, horse_name: str, limit: int = 5) -> list[RaceResult]:
             raw: Any = []
             profile: dict[str, Any] | None = None
+            entry = self._entry_for_horse(horse_name)
+            horse_id = self._entry_horse_id(entry)
             try:
-                if self.use_local_database:
+                if entry.get("horse_id") and not horse_id:
+                    if hasattr(self.inner_provider, "_start_debug"):
+                        self.inner_provider._start_debug(horse_name)
+                        self.inner_provider._debug_stage("HorseIdInvalid", horse_id=str(entry["horse_id"]), failure_stage="horse_id")
+                    raise ValueError(f"invalid entry horse_id: {entry['horse_id']}")
+                if not horse_id and hasattr(self.inner_provider, "search_horse"):
+                    if hasattr(self.inner_provider, "_start_debug"):
+                        self.inner_provider._start_debug(horse_name)
+                    horse_id, fetched_name, _ = self.inner_provider.search_horse(horse_name)
+                    if not is_valid_horse_id(horse_id) or not _horse_name_match(horse_name, fetched_name):
+                        raise ValueError("horse search did not resolve an exact valid identity")
+                    entry.update(horse_id=horse_id, horse_url=horse_url_from_id(horse_id))
+                    self.race_entries_by_name[_normalize_horse_name(horse_name)] = entry
+                if self.use_local_database and horse_id:
                     profile = get_or_fetch_horse_profile(
                         horse_name,
-                        lambda: self._fetch_profile(horse_name, limit),
+                        lambda: self._fetch_profile(horse_name, limit, horse_id),
                         force_refresh=self.force_refresh_data,
+                        horse_id=horse_id,
                     )
                     raw = (profile or {}).get("recent_races", [])
                 else:
-                    raw = self.inner_provider.get_recent_results(horse_name, limit=limit)
+                    raw = self._fetch_raw_recent_results(horse_name, limit, horse_id)
                     self.fetch_count += 1
                 records = _raw_to_records(raw)
-                normalized = [_to_race_result(item) for item in records[:limit]]
+                normalized = _normalize_history_records(records, limit)
             except RaceDataFetchError as exc:
-                debug_record = _build_fetch_debug_record(self.inner_provider, horse_name, raw, [])
+                debug_record = _build_fetch_debug_record(self.inner_provider, horse_name, raw, [], entry)
+                debug_record["error"] = str(exc)
                 self.fetch_debug.append(debug_record)
                 exc.debug_records = self.get_fetch_debug()
                 raise
             except Exception as exc:
-                debug_record = _build_fetch_debug_record(self.inner_provider, horse_name, raw, [])
+                debug_record = _build_fetch_debug_record(self.inner_provider, horse_name, raw, [], entry)
+                debug_record["error"] = str(exc)
                 self.fetch_debug.append(debug_record)
                 raise RaceDataFetchError(
                     f"{horse_name} の近走データ取得に失敗しました: {exc}",
@@ -86,7 +119,10 @@ def _wrap_provider(provider: Any, use_local_database: bool = False, force_refres
                     debug_records=self.get_fetch_debug(),
                 ) from exc
 
-            debug_record = _build_fetch_debug_record(self.inner_provider, horse_name, raw, normalized)
+            debug_record = _build_fetch_debug_record(
+                self.inner_provider, horse_name, raw, normalized, entry,
+                provider_debug=profile.get("fetch_debug", {}) if profile else None,
+            )
             if profile is not None:
                 debug_record["horse_database"] = profile.get("_database_status", "")
                 debug_record["horse_database_path"] = profile.get("_database_path", "")
@@ -110,22 +146,39 @@ def _wrap_provider(provider: Any, use_local_database: bool = False, force_refres
         def get_fetch_debug(self) -> list[dict[str, Any]]:
             return list(self.fetch_debug)
 
-        def _fetch_profile(self, horse_name: str, limit: int) -> dict[str, Any] | None:
-            raw = self.inner_provider.get_recent_results(horse_name, limit=limit)
+        def _fetch_profile(self, horse_name: str, limit: int, horse_id: str = "") -> dict[str, Any] | None:
+            raw = self._fetch_raw_recent_results(horse_name, limit, horse_id)
             self.fetch_count += 1
             records: list[dict[str, Any]] = []
-            for item in _raw_to_records(raw):
-                if isinstance(item, RaceResult):
-                    records.append(race_result_to_recent_dict(item))
-                elif isinstance(item, dict):
-                    records.append(dict(item))
+            for item in _normalize_history_records(_raw_to_records(raw), limit):
+                records.append(race_result_to_recent_dict(item))
             if not records:
                 return None
             return {
                 "horse_name": horse_name,
+                "horse_id": horse_id,
+                "horse_url": horse_url_from_id(horse_id) if is_valid_horse_id(horse_id) else "",
                 "recent_races": records,
                 "fetch_debug": _provider_debug_info(self.inner_provider, horse_name),
             }
+
+        def _fetch_raw_recent_results(self, horse_name: str, limit: int, horse_id: str = "") -> Any:
+            if is_valid_horse_id(horse_id) and hasattr(self.inner_provider, "get_recent_results_by_horse_id"):
+                return self.inner_provider.get_recent_results_by_horse_id(
+                    horse_id=horse_id,
+                    horse_name=horse_name,
+                    limit=limit,
+                )
+            if is_valid_horse_id(horse_id) and hasattr(self.inner_provider, "fetch_horse_history"):
+                return self.inner_provider.fetch_horse_history(horse_id=horse_id, horse_name=horse_name, limit=limit)
+            return self.inner_provider.get_recent_results(horse_name, limit=limit)
+
+        def _entry_for_horse(self, horse_name: str) -> dict[str, Any]:
+            return dict(self.race_entries_by_name.get(_normalize_horse_name(horse_name), {}))
+
+        def _entry_horse_id(self, entry: dict[str, Any]) -> str:
+            horse_id = str(entry.get("horse_id") or entry.get("netkeiba_horse_id") or "").strip()
+            return horse_id if is_valid_horse_id(horse_id) else ""
 
         def get_pedigree_info(self, horse_name: str) -> dict[str, Any] | None:
             if not hasattr(self.inner_provider, "get_pedigree_info"):
@@ -160,15 +213,23 @@ def _build_fetch_debug_record(
     input_horse_name: str,
     raw: Any,
     normalized_results: list[RaceResult],
+    entry: dict[str, Any] | None = None,
+    provider_debug: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    provider_debug = _provider_debug_info(provider, input_horse_name)
+    if provider_debug is None:
+        provider_debug = _provider_debug_info(provider, input_horse_name)
+    entry = entry or {}
     search_result_horse_name = _pick(
         provider_debug,
         ["search_result_horse_name", "fetched_horse_name", "page_horse_name", "matched_horse_name", "horse_name_on_page", "取得馬名", "ページ馬名"],
         "",
     )
     horse_id = _pick(provider_debug, ["horse_id", "id", "netkeiba_horse_id"], "")
+    if not horse_id:
+        horse_id = str(entry.get("horse_id") or entry.get("netkeiba_horse_id") or "")
     url = _pick(provider_debug, ["url", "horse_url", "page_url", "取得URL"], "")
+    if not url:
+        url = str(entry.get("horse_url") or "")
     raw_race_df = _pick(
         provider_debug,
         ["raw_race_df", "race_df", "raw_df", "read_html_df", "read_html_result", "tables", "scraped_df"],
@@ -186,7 +247,19 @@ def _build_fetch_debug_record(
         "url": url,
         "raw_race_df": raw_race_df,
         "recent_races": recent_races,
+        "recent_count": len(normalized_results),
         "name_match": name_match,
+        "horse_id_valid": is_valid_horse_id(horse_id),
+        "request_url": _pick(provider_debug, ["request_url", "search_url", "ajax_url"], ""),
+        "http_status": _pick(provider_debug, ["http_status", "status", "ajax_status"], ""),
+        "final_url": _pick(provider_debug, ["final_url", "source_url", "ajax_final_url"], ""),
+        "html_bytes": _pick(provider_debug, ["html_bytes", "ajax_html_bytes"], ""),
+        "title": _pick(provider_debug, ["title", "page_title"], ""),
+        "parse_rows": _pick(provider_debug, ["parse_rows", "recent_count"], len(normalized_results)),
+        "parser_status": _pick(provider_debug, ["parser_status"], ""),
+        "failure_stage": _pick(provider_debug, ["failure_stage"], ""),
+        "error": _pick(provider_debug, ["error"], ""),
+        "debug_logs": _pick(provider_debug, ["debug_logs"], []),
     }
 
 
@@ -248,10 +321,10 @@ def _to_race_result(item: Any) -> RaceResult:
     row = _as_dict(item)
     race_name = _required_pick(row, ["race_name", "name", "race", "レース名"], "race_name")
     distance_value = _required_pick(row, ["distance", "距離"], "distance")
-    track_condition = _required_pick(row, ["track_condition", "馬場状態", "馬場"], "track_condition")
+    track_condition = _pick(row, ["track_condition", "馬場状態", "馬場"], "")
     finish_position = _required_pick(row, ["finish_position", "finish", "rank", "result", "着順"], "finish")
-    passing_order = _required_pick(row, ["passing_order", "passing", "corner_order", "通過", "通過順"], "passing_order")
-    final_3f = _required_pick(row, ["final_3f", "last3f", "agari", "closing_3f", "上り", "上がり", "上がり3F"], "last3f")
+    passing_order = _pick(row, ["passing_order", "passing", "corner_order", "通過", "通過順"], "")
+    final_3f = _pick(row, ["final_3f", "last3f", "agari", "closing_3f", "上り", "上がり", "上がり3F"], 0.0)
     race_time = _pick(row, ["time", "race_time", "result_time", "走破タイム", "タイム"], None)
     winner_time_diff = _pick(row, ["winner_time_diff", "time_diff", "勝ち時計との差", "タイム差"], None)
     race_id = _pick(row, ["race_id", "id", "レースID"], "")
@@ -266,10 +339,6 @@ def _to_race_result(item: Any) -> RaceResult:
         raise ValueError(f"invalid distance: {distance_value}")
     if finish <= 0:
         raise ValueError(f"invalid finish: {finish_position}")
-    if not parsed_passing_order:
-        raise ValueError(f"invalid passing_order: {passing_order}")
-    if parsed_final_3f <= 0:
-        raise ValueError(f"invalid last3f: {final_3f}")
     return _make_race_result(
         race_name=str(race_name),
         distance=distance,
@@ -295,6 +364,18 @@ def _to_race_result(item: Any) -> RaceResult:
         race_id=str(race_id),
         raw=row,
     )
+
+
+def _normalize_history_records(records: list[Any], limit: int) -> list[RaceResult]:
+    results = []
+    for item in records:
+        try:
+            results.append(_to_race_result(item))
+        except (ValueError, TypeError):
+            continue
+        if len(results) >= limit:
+            break
+    return results
 
 
 def _make_race_result(**kwargs: Any) -> RaceResult:
@@ -394,6 +475,7 @@ def run_race_simulation(
     save_timeline_csv: bool = True,
     use_local_database: bool = True,
     force_refresh_data: bool = False,
+    progress_callback: Any = None,
 ) -> dict[str, Any]:
     """Run the full pipeline for CLI, Streamlit, or tests.
 
@@ -413,11 +495,12 @@ def run_race_simulation(
     provider = provider or load_provider(provider_module, provider_factory, use_local_database, force_refresh_data)
     if not getattr(provider, "_codex_provider_adapter", False):
         provider = _wrap_provider(provider, use_local_database, force_refresh_data)
+    provider.set_race_entries(entries)
 
     logs: list[str] = []
     logs.append("直近5走データを取得します。")
     analyzer = HorseAnalyzer(provider, config)
-    abilities = analyzer.analyze_many(entries)
+    abilities = analyzer.analyze_many(entries, progress_callback=progress_callback)
     ability_table = analyzer.to_dataframe(abilities)
 
     logs.append("近走傾向から脚質と能力値を推定しました。")
@@ -607,6 +690,8 @@ def _coerce_horses(values: list[dict[str, Any]] | list[HorseEntry]) -> list[Hors
                     pedigree_info=value.get("pedigree_info") if isinstance(value.get("pedigree_info"), dict) else None,
                     jockey=str(value.get("jockey", "")).strip(),
                     jockey_score=float(value.get("jockey_score", 50.0) or 50.0),
+                    horse_id=str(value.get("horse_id") or "").strip(),
+                    horse_url=str(value.get("horse_url") or "").strip(),
                 )
             )
     return entries
