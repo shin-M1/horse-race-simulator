@@ -17,7 +17,7 @@ if str(SRC) not in sys.path:
 from evaluation import evaluate_prediction, save_prediction_log
 from horse_analyzer import parse_race_time
 from netkeiba_fetcher import NetkeibaRaceFetcher
-from race_data_fetcher import load_prediction_race_data
+from race_data_fetcher import load_prediction_race_data, load_prediction_race_data_by_id
 
 
 class NetkeibaRaceFetcherTest(unittest.TestCase):
@@ -63,6 +63,61 @@ class NetkeibaRaceFetcherTest(unittest.TestCase):
         )
         self.assertIsNotNone(loaded)
         self.assertEqual(calls, ["search", "entries", "metadata"])
+
+    def test_date_schedule_contains_jra_and_nar_races(self) -> None:
+        date_html = "<li date='20261114'><a href='/top/race_list_sub.html?kaisai_date=20261114'>date</a></li>"
+        jra_html = """
+        <dl class='RaceList_DataList'><dt class='RaceList_DataHeader'><p class='RaceList_DataTitle'>5回 東京 3日目</p></dt>
+        <dd class='RaceList_Data'><ul><li class='RaceList_DataItem'><a href='../race/shutuba.html?race_id=202605050311'>
+        <span class='Race_Num'>11R</span><span class='ItemTitle'>テストS</span><span class='RaceList_Itemtime'>15:30</span>
+        <span class='RaceList_ItemLong Turf'>芝1600m</span></a></li></ul></dd></dl>
+        """
+        nar_html = jra_html.replace("東京", "大井").replace("202605050311", "202644110411").replace("芝1600m", "ダ1800m")
+
+        def request(url: str) -> tuple[str, str]:
+            if "race_list_get_date_list" in url:
+                return date_html, url
+            return (nar_html if "nar.netkeiba" in url else jra_html), url
+
+        self.fetcher._request_text = request
+        rows = self.fetcher.fetch_race_schedule("2026-11-14")
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual({row["organization"] for row in rows}, {"JRA", "NAR"})
+        self.assertEqual({row["race_id"] for row in rows}, {"202605050311", "202644110411"})
+
+    def test_metadata_extracts_meeting_weather_track_and_course_layout(self) -> None:
+        html = """
+        <html><head><title>テストS 2026年11月14日</title></head><body>
+        <h1 class='RaceName'>テストS</h1>
+        <div class='RaceData01'>15:30発走 / 芝1600m 左 / 天候:晴 / 馬場:稍重 / 芝Bコース</div>
+        <div class='RaceData02'>5回 東京 3日目 G2</div>
+        </body></html>
+        """
+        self.fetcher._request_text = lambda url: (html, url)
+
+        metadata = self.fetcher.fetch_race_metadata("202605050311")
+
+        self.assertEqual(metadata["venue"], "東京")
+        self.assertEqual(metadata["surface"], "芝")
+        self.assertEqual(metadata["distance"], 1600)
+        self.assertEqual(metadata["direction"], "左")
+        self.assertEqual(metadata["weather"], "晴")
+        self.assertEqual(metadata["track_condition"], "稍重")
+        self.assertEqual(metadata["meeting"], "東京5回3日")
+        self.assertEqual(metadata["course_layout"], "B")
+
+    def test_prediction_loader_uses_selected_race_id(self) -> None:
+        loaded = load_prediction_race_data_by_id(
+            "202605050311",
+            {"race_name": "テストS", "race_date": "2026-11-14", "venue": "東京"},
+            entries_fn=lambda race_id: [{"horse_name": "A", "horse_number": 1, "frame": 1}],
+            metadata_fn=lambda race_id: {"distance": 1600, "direction": "左"},
+        )
+
+        self.assertEqual(loaded["race_id"], "202605050311")
+        self.assertEqual(loaded["race_metadata"]["venue"], "東京")
+        self.assertEqual(loaded["fetched_entries"][0]["horse_name"], "A")
 
     def test_parse_race_time(self) -> None:
         self.assertAlmostEqual(parse_race_time("2:10.2"), 130.2)

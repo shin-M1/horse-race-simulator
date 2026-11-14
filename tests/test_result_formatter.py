@@ -16,6 +16,7 @@ from result_formatter import (
     build_single_race_result_from_timeline,
     build_horse_comments_table,
     build_recent_races_table,
+    build_corner_position_table,
     extract_value,
     format_analysis_table,
     style_group_table,
@@ -145,6 +146,30 @@ class ResultFormatterTest(unittest.TestCase):
         self.assertEqual(table["区分"].tolist(), ["先頭候補", "中団候補", "後方候補"])
         self.assertNotIn("front_candidates", table.to_string())
         self.assertNotIn("closer_candidates", table.to_string())
+
+    def test_corner_position_table_has_no_duplicates_or_missing_horses(self) -> None:
+        analysis = pd.DataFrame(
+            [
+                {"horse_name": f"馬{i}", "horse_number": i, "frame": min(i, 8), "base_逃げ": 1.0 if i == 1 else 0.0,
+                 "base_先行": 1.0 if i in {2, 3} else 0.0, "base_差し": 1.0 if i in {4, 5} else 0.0,
+                 "base_追込": 1.0 if i == 6 else 0.0, "weighted_avg_first_ratio": (i - 1) / 5,
+                 "weighted_avg_mid_ratio": (i - 1) / 5, "weighted_avg_last_corner_ratio": (i - 1) / 5}
+                for i in range(1, 7)
+            ]
+        )
+
+        table = build_corner_position_table(analysis, {"pace": "medium"}, {"distance": 2000, "direction": "右"})
+
+        self.assertEqual(list(table.columns), ["位置", "第1コーナー", "第2コーナー", "第3コーナー", "第4コーナー"])
+        for column in table.columns[1:]:
+            displayed = "、".join(table[column].tolist())
+            for i in range(1, 7):
+                self.assertEqual(displayed.count(f"馬{i}"), 1)
+
+    def test_straight_course_uses_three_phases(self) -> None:
+        analysis = pd.DataFrame([{"horse_name": "A", "horse_number": 1, "base_先行": 1.0}])
+        table = build_corner_position_table(analysis, {"pace": "slow"}, {"distance": 1000, "direction": "直線"})
+        self.assertEqual(list(table.columns), ["位置", "序盤", "中盤", "終盤"])
 
     def test_build_horse_comments_table_outputs_all_horse_comments(self) -> None:
         prediction_table = pd.DataFrame(

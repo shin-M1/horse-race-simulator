@@ -71,6 +71,9 @@ class HorseEntry:
     jockey_score: float = 50.0
     horse_id: str = ""
     horse_url: str = ""
+    trainer: str = ""
+    affiliation: str = ""
+    organization: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -83,6 +86,9 @@ class HorseEntry:
             "jockey_score": float(self.jockey_score),
             "horse_id": self.horse_id,
             "horse_url": self.horse_url,
+            "trainer": self.trainer,
+            "affiliation": self.affiliation,
+            "organization": self.organization,
         }
 
 

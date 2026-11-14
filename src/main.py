@@ -692,6 +692,9 @@ def _coerce_horses(values: list[dict[str, Any]] | list[HorseEntry]) -> list[Hors
                     jockey_score=float(value.get("jockey_score", 50.0) or 50.0),
                     horse_id=str(value.get("horse_id") or "").strip(),
                     horse_url=str(value.get("horse_url") or "").strip(),
+                    trainer=str(value.get("trainer") or "").strip(),
+                    affiliation=str(value.get("affiliation") or "").strip(),
+                    organization=str(value.get("organization") or "").strip(),
                 )
             )
     return entries

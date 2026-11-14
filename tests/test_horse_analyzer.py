@@ -83,8 +83,8 @@ class HorseAnalyzerStyleTest(unittest.TestCase):
         self.assertIsNotNone(large_snapshot)
         self.assertIsNotNone(small_snapshot)
         assert large_snapshot is not None and small_snapshot is not None
-        self.assertAlmostEqual(large_snapshot.first_ratio, 3 / 18)
-        self.assertAlmostEqual(small_snapshot.first_ratio, 3 / 8)
+        self.assertAlmostEqual(large_snapshot.first_ratio, (3 - 1) / (18 - 1))
+        self.assertAlmostEqual(small_snapshot.first_ratio, (3 - 1) / (8 - 1))
         self.assertGreater(
             create_base_style_profile([large_field])["逃げ"],
             create_base_style_profile([small_field])["逃げ"],
@@ -95,7 +95,11 @@ class HorseAnalyzerStyleTest(unittest.TestCase):
         small_field = [{"passing_order": "4-4-4-3", "finish": 3, "field_size": 8}] * 3
 
         self.assertEqual(primary_style_from_profile(create_base_style_profile(large_field)), "先行")
-        self.assertEqual(primary_style_from_profile(create_base_style_profile(small_field)), "差し")
+        self.assertEqual(primary_style_from_profile(create_base_style_profile(small_field)), "先行")
+        self.assertGreater(
+            create_base_style_profile(small_field)["差し"],
+            create_base_style_profile(large_field)["差し"],
+        )
 
     def test_mud_aptitude_uses_race_history_first(self) -> None:
         wet_race = RaceResult(
@@ -319,8 +323,14 @@ class HorseAnalyzerStyleTest(unittest.TestCase):
             ["2-2-2-2", "10-10-8-5", "5-5-4-3"],
             [2, 5, 3],
         )
-        self.assertEqual(ability.primary_running_style, "自在")
+        self.assertEqual(ability.primary_running_style, max(ability.base_style_profile, key=ability.base_style_profile.get))
         self.assertLess(max(ability.base_style_profile.values()), 0.40)
+
+    def test_single_race_style_uses_neutral_prior(self) -> None:
+        profile = create_base_style_profile([{"passing_order": "1-1-1-1", "finish": 1, "field_size": 18}])
+
+        self.assertLess(profile["逃げ"], 0.80)
+        self.assertAlmostEqual(sum(profile.values()), 1.0)
 
     def test_create_base_style_profile_is_normalized(self) -> None:
         profile = create_base_style_profile(

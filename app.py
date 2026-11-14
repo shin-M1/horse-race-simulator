@@ -132,7 +132,8 @@ from prediction_explainability import (
     contribution_table_from_row,
     prepare_prediction_features,
 )
-from race_data_fetcher import load_prediction_race_data
+from race_data_fetcher import load_prediction_race_data, load_prediction_race_data_by_id
+from netkeiba_fetcher import fetch_race_schedule
 from race_database import get_or_fetch_race_data
 from race_trend_database import (
     analyze_same_race_trend_database,
@@ -147,7 +148,8 @@ from result_formatter import (
     build_recent_races_table,
     format_analysis_table,
     pace_comment,
-    style_group_table,
+    build_corner_position_table,
+    race_flow_summary,
     style_probability_long_table,
 )
 from ui_components import render_horse_editor, render_race_inputs, show_dataframe_safe
@@ -191,6 +193,52 @@ def cached_prediction_race_data(
             fetched["_database_status"] = "disabled"
     if not isinstance(fetched, dict) or not fetched.get("fetched_entries"):
         raise RaceDataFetchError("出走馬一覧を取得できませんでした。空データはキャッシュしません。")
+    return fetched
+
+
+@st.cache_data(ttl=86400, max_entries=20, show_spinner=False)
+def cached_race_schedule(race_date: str) -> list[dict[str, Any]]:
+    return fetch_race_schedule(race_date)
+
+
+@st.cache_data(ttl=86400, max_entries=40, show_spinner=False)
+def cached_prediction_race_data_by_id(
+    race_id: str,
+    race_name: str,
+    race_date: str,
+    venue: str,
+    organization: str,
+    meeting: str,
+    surface: str,
+    distance: int,
+    use_local_database: bool = True,
+    force_refresh_data: bool = False,
+) -> dict[str, Any] | None:
+    selected = {
+        "race_id": race_id,
+        "race_name": race_name,
+        "race_date": race_date,
+        "venue": venue,
+        "organization": organization,
+        "meeting": meeting,
+        "surface": surface,
+        "distance": int(distance),
+    }
+    fetcher = lambda: load_prediction_race_data_by_id(race_id, selected)
+    if use_local_database:
+        fetched = get_or_fetch_race_data(
+            race_name=race_name,
+            race_date=race_date,
+            race_id=race_id,
+            fetcher_func=fetcher,
+            force_refresh=force_refresh_data,
+        )
+    else:
+        fetched = fetcher()
+        if isinstance(fetched, dict):
+            fetched["_database_status"] = "disabled"
+    if not isinstance(fetched, dict) or not fetched.get("fetched_entries"):
+        raise RaceDataFetchError("選択したレースの出馬表が未公開、または取得できませんでした。")
     return fetched
 
 
@@ -685,27 +733,78 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
         st.info("Monte Carloシミュレーション・動画生成はCloudでは無効です。")
         st.info("高品質シミュレーションはローカル版をご利用ください。")
 
-    lookup_col, date_col, fetch_col = st.columns([2, 1, 1])
-    with lookup_col:
-        race_name_input = st.text_input("レース名", key="prediction_race_name")
+    date_col, venue_col, race_col, fetch_col = st.columns([1.0, 1.2, 2.4, 0.9])
     with date_col:
         race_date_input = st.date_input("開催日", value=date.today(), key="prediction_race_date")
+    try:
+        schedule = cached_race_schedule(race_date_input.isoformat())
+    except Exception as exc:
+        logger.exception("race schedule fetch failed")
+        schedule = []
+        st.warning(f"開催情報を取得できませんでした: {exc}")
+
+    venue_labels = list(dict.fromkeys(
+        f"{row.get('organization', '')} / {row.get('venue', '')}" for row in schedule if row.get("venue")
+    ))
+    with venue_col:
+        selected_venue_label = st.selectbox(
+            "競馬場",
+            venue_labels or ["開催情報なし"],
+            disabled=not venue_labels,
+            key="prediction_venue_selection",
+        )
+    selected_organization, _, selected_venue = selected_venue_label.partition(" / ")
+    venue_races = [
+        row for row in schedule
+        if str(row.get("venue", "")) == selected_venue and str(row.get("organization", "")) == selected_organization
+    ]
+
+    race_options = {
+        (
+            f"{int(row.get('race_number', 0) or 0)}R {row.get('race_name', '')} "
+            f"{row.get('start_time', '')} {row.get('surface', '')}{row.get('distance', '')}m"
+        ).strip(): row
+        for row in venue_races
+    }
+    with race_col:
+        selected_race_label = st.selectbox(
+            "レース",
+            list(race_options) or ["レース情報なし"],
+            disabled=not race_options,
+            key="prediction_race_selection",
+        )
+    selected_race = race_options.get(selected_race_label, {})
+    race_name_input = str(selected_race.get("race_name", ""))
     with fetch_col:
         st.write("")
-        fetch_entries = st.button("出馬表を取得", key="fetch_prediction_entries", width="stretch")
+        fetch_entries = st.button(
+            "出馬表を取得",
+            key="fetch_prediction_entries",
+            width="stretch",
+            disabled=not selected_race,
+        )
+
+    if not schedule:
+        st.info("指定日に開催情報がないか、netkeibaでレース一覧がまだ公開されていません。")
 
     if fetch_entries:
         try:
             if force_refresh_data:
-                cached_prediction_race_data.clear()
-            fetched = cached_prediction_race_data(
-                race_name_input.strip(),
-                race_date_input.isoformat(),
+                cached_prediction_race_data_by_id.clear()
+            fetched = cached_prediction_race_data_by_id(
+                race_id=str(selected_race.get("race_id", "")),
+                race_name=race_name_input,
+                race_date=race_date_input.isoformat(),
+                venue=str(selected_race.get("venue", "")),
+                organization=str(selected_race.get("organization", "")),
+                meeting=str(selected_race.get("meeting", "")),
+                surface=str(selected_race.get("surface", "")),
+                distance=int(selected_race.get("distance", 0) or 0),
                 use_local_database=use_local_database,
                 force_refresh_data=force_refresh_data,
             )
             if fetched is None:
-                st.error("レースを特定できませんでした。レース名と開催日を確認してください。")
+                st.error("選択したレースを特定できませんでした。開催情報を再取得してください。")
             elif not fetched.get("fetched_entries"):
                 st.error("出馬表を取得できませんでした。手入力またはCSVアップロードを利用してください。")
                 st.session_state["prediction_race_data"] = fetched
@@ -733,6 +832,15 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
             st.error(f"CSVを読み込めませんでした: {exc}")
 
     prediction_race_data = st.session_state.get("prediction_race_data", {})
+    selected_race_id = str(selected_race.get("race_id", ""))
+    if (
+        selected_race_id
+        and isinstance(prediction_race_data, dict)
+        and prediction_race_data.get("race_id")
+        and str(prediction_race_data.get("race_id")) != selected_race_id
+    ):
+        prediction_race_data = {}
+        st.info("選択中のレースが変わりました。出馬表を取得してください。")
     fetched_entries_data = prediction_race_data.get("fetched_entries", []) if isinstance(prediction_race_data, dict) else []
     initial_entries = st.session_state.get("prediction_csv_entries") or fetched_entries_data
     metadata_defaults = prediction_race_data.get("race_metadata", {}) if isinstance(prediction_race_data, dict) else {}
@@ -750,9 +858,13 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
             show_dataframe_safe(pd.DataFrame(fetched_entries_data), width="stretch", hide_index=True)
 
     race_config = render_race_inputs(metadata_defaults, key_prefix=f"prediction_{editor_version}")
-    if race_name_input.strip():
-        race_config["race_name"] = race_name_input.strip()
+    selected_metadata = metadata_defaults if isinstance(metadata_defaults, dict) else {}
+    selected_race_name = str(selected_metadata.get("race_name") or race_name_input).strip()
+    if selected_race_name:
+        race_config["race_name"] = selected_race_name
         race_config["race_date"] = race_date_input.isoformat()
+    if isinstance(prediction_race_data, dict) and prediction_race_data.get("race_id"):
+        race_config["race_id"] = str(prediction_race_data.get("race_id"))
 
     st.sidebar.header("出走設定")
     animation_method = st.sidebar.radio("アニメーション形式", ["3D風", "簡易2D", "投稿用MP4"], index=0)
@@ -803,7 +915,7 @@ def _render_prediction_tab_impl(debug_mode: bool = False) -> None:
     horse_df = render_horse_editor(
         initial_count=max(2, len(initial_entries) if initial_entries else 5),
         initial_dataframe=initial_entries or None,
-        key=f"horse_editor_dynamic_{editor_version}",
+        key=f"horse_editor_dynamic_{editor_version}_{selected_race_id or 'manual'}",
     )
     horses = dataframe_to_horses(horse_df)
     st.sidebar.metric("現在の出走頭数", len(horses))
@@ -2295,13 +2407,20 @@ def render_results(result: dict[str, object], debug_mode: bool = False, predicti
         st.warning("今回のシミュレーション着順を作成できませんでした。")
 
     st.subheader("レース展開予測")
+    flow_summary = race_flow_summary(pace_prediction, len(horse_analysis) if isinstance(horse_analysis, pd.DataFrame) else 0)
     c1, c2, c3 = st.columns(3)
-    c1.metric("予測ペース", str(pace_prediction.get("pace", "")))
-    c2.metric("front_pressure", f"{float(pace_prediction.get('front_pressure', 0.0)):.2f}")
-    c3.metric("差し有利度", f"{float(pace_prediction.get('closer_advantage', 0.0)):.2f}")
+    c1.metric("予想ペース", flow_summary["予想ペース"])
+    c2.metric("先行争い", flow_summary["先行争い"])
+    c3.metric("展開有利", flow_summary["展開有利"])
     st.write(pace_comment(pace_prediction))
     st.info(f"コースバイアス：{get_course_bias(result.get('race_config', {})).get('comment', '')}")
-    show_dataframe_safe(style_group_table(pace_prediction), width="stretch", hide_index=True)
+    if isinstance(horse_analysis, pd.DataFrame):
+        corner_table = build_corner_position_table(
+            horse_analysis,
+            pace_prediction,
+            result.get("race_config", {}),
+        )
+        show_dataframe_safe(corner_table, width="stretch", hide_index=True)
 
     prediction = result.get("prediction")
     if isinstance(prediction, dict):

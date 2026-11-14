@@ -14,6 +14,7 @@ from horse_analyzer import parse_race_time
 
 
 RACE_BASE_URL = "https://race.netkeiba.com"
+NAR_RACE_BASE_URL = "https://nar.netkeiba.com"
 DB_BASE_URL = "https://db.netkeiba.com"
 VENUE_CODES = {
     "01": "札幌",
@@ -26,7 +27,24 @@ VENUE_CODES = {
     "08": "京都",
     "09": "阪神",
     "10": "小倉",
+    "30": "門別",
+    "35": "盛岡",
+    "36": "水沢",
+    "42": "浦和",
+    "43": "船橋",
+    "44": "大井",
+    "45": "川崎",
+    "46": "金沢",
+    "47": "笠松",
+    "48": "名古屋",
+    "50": "園田",
+    "51": "姫路",
+    "54": "高知",
+    "55": "佐賀",
+    "65": "帯広",
 }
+
+JRA_VENUE_CODES = {code for code in VENUE_CODES if int(code) <= 10}
 
 
 class NetkeibaRaceFetcher:
@@ -44,6 +62,104 @@ class NetkeibaRaceFetcher:
         )
         self._last_request_at = 0.0
         self.last_debug: dict[str, Any] = {}
+
+    def fetch_race_schedule(self, race_date: str) -> list[dict[str, Any]]:
+        """Return the JRA and NAR race cards published for one date."""
+        date_compact = re.sub(r"\D", "", str(race_date))
+        if len(date_compact) != 8:
+            return []
+        races: list[dict[str, Any]] = []
+        errors: list[str] = []
+        for organization, base_url in (("JRA", RACE_BASE_URL), ("NAR", NAR_RACE_BASE_URL)):
+            try:
+                races.extend(self._fetch_schedule_for_site(date_compact, organization, base_url))
+            except (requests.RequestException, ValueError, pd.errors.ParserError) as exc:
+                errors.append(f"{organization}: {exc}")
+        races.sort(key=lambda row: (str(row.get("organization", "")), str(row.get("venue", "")), int(row.get("race_number", 0))))
+        self.last_debug = {
+            "operation": "fetch_race_schedule",
+            "race_date_input": date_compact,
+            "raw_dataframe": pd.DataFrame(races),
+            "parsed_entries": races,
+            "errors": errors,
+        }
+        return races
+
+    def _fetch_schedule_for_site(
+        self,
+        date_compact: str,
+        organization: str,
+        base_url: str,
+    ) -> list[dict[str, Any]]:
+        date_url = f"{base_url}/top/race_list_get_date_list.html?kaisai_date={date_compact}"
+        date_html, date_final_url = self._request_text(date_url)
+        date_soup = BeautifulSoup(date_html, "lxml")
+        anchors = date_soup.select(f"li[date='{date_compact}'] a[href*='race_list_sub']")
+        if not anchors:
+            anchors = []
+            for anchor in date_soup.select("a[href*='race_list_sub']"):
+                parent = anchor.find_parent("li")
+                if parent is not None and str(parent.get("date", "")) == date_compact:
+                    anchors.append(anchor)
+        sub_urls = [urljoin(date_final_url, str(anchor.get("href", ""))) for anchor in anchors]
+        if not sub_urls:
+            return []
+
+        races: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for sub_url in dict.fromkeys(sub_urls):
+            html_text, final_url = self._request_text(sub_url)
+            soup = BeautifulSoup(html_text, "lxml")
+            blocks = soup.select("dl.RaceList_DataList") or soup.select("dl.RaceList_Box") or [soup]
+            for block in blocks:
+                meeting_node = block.select_one(".RaceList_DataTitle, .RaceList_DataHeader")
+                meeting = _clean_text(meeting_node.get_text(" ", strip=True)) if meeting_node else ""
+                venue, meeting_number, meeting_day = _parse_meeting(meeting)
+                if venue:
+                    meeting = f"{venue}{meeting_number}回{meeting_day}日"
+                for item in block.select("li.RaceList_DataItem"):
+                    anchor = item.select_one("a[href*='race_id=']")
+                    if anchor is None:
+                        continue
+                    href = str(anchor.get("href", ""))
+                    race_id = _extract_race_id(href)
+                    if not race_id or race_id in seen:
+                        continue
+                    race_number = _parse_int(_node_text(item, ".Race_Num"))
+                    race_name = _node_text(item, ".ItemTitle") or _clean_text(anchor.get_text(" ", strip=True))
+                    race_data = _node_text(item, ".RaceData")
+                    start_time = _node_text(item, ".RaceList_Itemtime")
+                    course_text = _node_text(item, ".RaceList_ItemLong")
+                    if not start_time:
+                        time_match = re.search(r"\b(\d{1,2}:\d{2})\b", race_data)
+                        start_time = time_match.group(1) if time_match else ""
+                    if not course_text:
+                        course_match = re.search(r"(芝|ダート|ダ|障害)\s*(\d{3,4})m", race_data)
+                        course_text = "" if course_match is None else f"{course_match.group(1)}{course_match.group(2)}m"
+                    course_match = re.search(r"(芝|ダート|ダ|障害)\s*(\d{3,4})m", course_text)
+                    surface_text = course_match.group(1) if course_match else ""
+                    surface = "ダート" if surface_text in {"ダ", "ダート"} else surface_text
+                    distance = int(course_match.group(2)) if course_match else 0
+                    resolved_venue = venue or venue_from_race_id(race_id)
+                    races.append(
+                        {
+                            "race_id": race_id,
+                            "race_date": f"{date_compact[:4]}-{date_compact[4:6]}-{date_compact[6:]}",
+                            "organization": organization,
+                            "venue": resolved_venue,
+                            "meeting": meeting,
+                            "meeting_number": meeting_number,
+                            "meeting_day": meeting_day,
+                            "race_number": race_number,
+                            "race_name": race_name,
+                            "start_time": start_time,
+                            "surface": surface,
+                            "distance": distance,
+                            "source_url": urljoin(final_url, href),
+                        }
+                    )
+                    seen.add(race_id)
+        return races
 
     def search_race_id_by_name_and_date(self, race_name: str, race_date: str) -> dict[str, Any] | None:
         normalized_name = _normalize_text(race_name)
@@ -109,7 +225,8 @@ class NetkeibaRaceFetcher:
     def fetch_race_entries(self, race_id: str) -> list[dict[str, Any]]:
         if not _valid_race_id(race_id):
             return []
-        url = f"{RACE_BASE_URL}/race/shutuba.html?race_id={race_id}"
+        base_url = _race_site_base(race_id)
+        url = f"{base_url}/race/shutuba.html?race_id={race_id}"
         html_text, final_url = self._request_text(url)
         raw_frame = _find_table(html_text, required_groups=[("馬名",), ("馬番",), ("騎手",), ("斤量",)])
         entries = [] if raw_frame is None else [_parse_entry_row(row) for _, row in raw_frame.iterrows()]
@@ -133,7 +250,7 @@ class NetkeibaRaceFetcher:
     def fetch_race_result(self, race_id: str) -> list[dict[str, Any]]:
         if not _valid_race_id(race_id):
             return []
-        url = f"{RACE_BASE_URL}/race/result.html?race_id={race_id}"
+        url = f"{_race_site_base(race_id)}/race/result.html?race_id={race_id}"
         try:
             html_text, final_url = self._request_text(url)
             raw_frame = _find_table(html_text, required_groups=[("着順",), ("馬名",), ("馬番",), ("タイム",)])
@@ -164,7 +281,8 @@ class NetkeibaRaceFetcher:
     def fetch_race_metadata(self, race_id: str) -> dict[str, Any]:
         if not _valid_race_id(race_id):
             return {}
-        url = f"{RACE_BASE_URL}/race/shutuba.html?race_id={race_id}"
+        base_url = _race_site_base(race_id)
+        url = f"{base_url}/race/shutuba.html?race_id={race_id}"
         html_text, final_url = self._request_text(url)
         soup = BeautifulSoup(html_text, "lxml")
         race_name = next(
@@ -184,12 +302,22 @@ class NetkeibaRaceFetcher:
         direction_match = re.search(r"(?:右|左|直線)", data_text)
         weather_match = re.search(r"天候[:：]?\s*(晴|曇|雨|雪)", data_text)
         condition_match = re.search(r"(?:馬場|芝|ダート)[:：]?\s*(良|稍重|稍|重|不良)", data_text)
+        meeting_match = re.search(r"(\d+)回\s*([^\s]+)\s*(\d+)日目", data_text)
+        meeting = (
+            f"{meeting_match.group(2)}{meeting_match.group(1)}回{meeting_match.group(3)}日"
+            if meeting_match
+            else ""
+        )
         date_match = re.search(r"(20\d{2})年\s*(\d{1,2})月\s*(\d{1,2})日", f"{data_text} {page_title}")
         race_date = (
             f"{int(date_match.group(1)):04d}-{int(date_match.group(2)):02d}-{int(date_match.group(3)):02d}"
             if date_match
             else ""
         )
+        course_layout_match = re.search(r"(?:芝)?\s*([ABCD])コース", data_text, re.I)
+        course_layout = course_layout_match.group(1).upper() if course_layout_match else ""
+        if not course_layout and base_url == RACE_BASE_URL and surface == "芝":
+            course_layout = self._fetch_jra_course_layout(race_id, race_date)
         class_text = _clean_text(
             f"{page_title} "
             + " ".join(node.get_text(" ", strip=True) for node in soup.select(".Icon_GradeType, .RaceName span, .RaceData02"))
@@ -206,6 +334,13 @@ class NetkeibaRaceFetcher:
             "weather": weather_match.group(1) if weather_match else "",
             "track_condition": "稍重" if condition_match and condition_match.group(1) == "稍" else condition_match.group(1) if condition_match else "",
             "race_class": race_class,
+            "meeting": meeting,
+            "meeting_number": int(meeting_match.group(1)) if meeting_match else 0,
+            "meeting_day": int(meeting_match.group(3)) if meeting_match else 0,
+            "race_course_day": f"{int(meeting_match.group(3))}日目" if meeting_match else "",
+            "course_layout": course_layout,
+            "organization": "JRA" if base_url == RACE_BASE_URL else "NAR",
+            "corner_count": _infer_corner_count(venue_from_race_id(race_id), surface, distance, direction_match.group(0) if direction_match else ""),
             "source_url": final_url,
         }
         self.last_debug = {
@@ -219,6 +354,22 @@ class NetkeibaRaceFetcher:
             "race_metadata": metadata,
         }
         return metadata
+
+    def _fetch_jra_course_layout(self, race_id: str, race_date: str) -> str:
+        date_compact = re.sub(r"\D", "", race_date)
+        if len(date_compact) != 8:
+            date_compact = str(race_id)[:4] + "0101"
+        try:
+            html_text, _ = self._request_text(f"{RACE_BASE_URL}/race/track.html?kaisai_date={date_compact}")
+        except (requests.RequestException, ValueError):
+            return ""
+        soup = BeautifulSoup(html_text, "lxml")
+        venue_code = str(race_id)[4:6]
+        venue_node = soup.select_one(f".Jyo_{venue_code}")
+        search_root = venue_node.parent if venue_node is not None and venue_node.parent is not None else soup
+        text = _clean_text(search_root.get_text(" ", strip=True))
+        match = re.search(r"(?:芝)?\s*([ABCD])コース", text, re.I)
+        return match.group(1).upper() if match else ""
 
     def get_debug_info(self) -> dict[str, Any]:
         return dict(self.last_debug)
@@ -253,6 +404,8 @@ def _find_table(html_text: str, required_groups: list[tuple[str, ...]]) -> pd.Da
 
 
 def _parse_entry_row(row: pd.Series) -> dict[str, Any]:
+    trainer = _pick(row, ["厩舎", "調教師", "trainer"])
+    affiliation = _trainer_affiliation(trainer)
     return {
         "horse_name": _pick(row, ["馬名", "horse_name"]),
         "frame": _parse_int(_pick(row, ["枠", "枠番", "frame"])),
@@ -260,7 +413,9 @@ def _parse_entry_row(row: pd.Series) -> dict[str, Any]:
         "carried_weight": _parse_float_or_none(_pick(row, ["斤量", "carried_weight"])),
         "jockey": _pick(row, ["騎手", "jockey"]),
         "sex_age": _pick(row, ["性齢", "sex_age"]),
-        "trainer": _pick(row, ["厩舎", "調教師", "trainer"]),
+        "trainer": trainer,
+        "affiliation": affiliation,
+        "organization": "JRA" if affiliation in {"美浦", "栗東"} else "NAR" if affiliation else "",
         "horse_weight": _pick(row, ["馬体重", "horse_weight"]) or None,
         "popularity": _parse_int_or_none(_pick(row, ["人気", "人気順", "popularity"])),
         "odds": _parse_float_or_none(_pick(row, ["オッズ", "単勝", "odds"])),
@@ -366,6 +521,42 @@ def _normalize_race_class(value: str) -> str:
     return upper.replace("GⅠ", "G1").replace("GⅡ", "G2").replace("GⅢ", "G3").replace("リステッド", "L")
 
 
+def _race_site_base(race_id: str) -> str:
+    return RACE_BASE_URL if str(race_id)[4:6] in JRA_VENUE_CODES else NAR_RACE_BASE_URL
+
+
+def _node_text(node: Any, selector: str) -> str:
+    child = node.select_one(selector)
+    return _clean_text(child.get_text(" ", strip=True)) if child is not None else ""
+
+
+def _parse_meeting(value: str) -> tuple[str, int, int]:
+    match = re.search(r"(\d+)回\s*([^\s]+)\s*(\d+)日目", value)
+    if not match:
+        return "", 0, 0
+    return match.group(2), int(match.group(1)), int(match.group(3))
+
+
+def _trainer_affiliation(trainer: str) -> str:
+    text = _clean_text(trainer)
+    for affiliation in ("美浦", "栗東", "門別", "盛岡", "水沢", "浦和", "船橋", "大井", "川崎", "金沢", "笠松", "名古屋", "園田", "姫路", "高知", "佐賀", "帯広"):
+        if affiliation in text:
+            return affiliation
+    return ""
+
+
+def _infer_corner_count(venue: str, surface: str, distance: int, direction: str) -> int:
+    if direction == "直線":
+        return 0
+    if distance <= 1600:
+        return 2
+    if venue == "東京" and distance <= 2000:
+        return 2
+    if venue in {"京都", "阪神"} and surface == "芝" and distance <= 1800:
+        return 2
+    return 4
+
+
 def _extract_entry_horse_links(html_text: str, base_url: str) -> list[dict[str, str]]:
     soup = BeautifulSoup(html_text, "lxml")
     links: list[dict[str, str]] = []
@@ -422,6 +613,10 @@ def search_race_id_by_name_and_date(race_name: str, race_date: str) -> dict[str,
 
 def fetch_race_entries(race_id: str) -> list[dict[str, Any]]:
     return _DEFAULT_FETCHER.fetch_race_entries(race_id)
+
+
+def fetch_race_schedule(race_date: str) -> list[dict[str, Any]]:
+    return _DEFAULT_FETCHER.fetch_race_schedule(race_date)
 
 
 def fetch_race_result(race_id: str) -> list[dict[str, Any]]:

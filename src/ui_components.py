@@ -6,9 +6,12 @@ import pandas as pd
 import streamlit as st
 
 
-COURSES = ["東京", "中山", "京都", "阪神", "中京", "札幌", "函館", "福島", "新潟", "小倉"]
+COURSES = [
+    "東京", "中山", "京都", "阪神", "中京", "札幌", "函館", "福島", "新潟", "小倉",
+    "門別", "盛岡", "水沢", "浦和", "船橋", "大井", "川崎", "金沢", "笠松", "名古屋", "園田", "姫路", "高知", "佐賀", "帯広",
+]
 SURFACES = ["芝", "ダート"]
-DIRECTIONS = ["右", "左"]
+DIRECTIONS = ["右", "左", "直線"]
 WEATHERS = ["晴", "曇", "雨", "雪"]
 TRACK_CONDITIONS = ["良", "稍重", "重", "不良"]
 RACE_COURSE_DAYS = [f"{day}日目" for day in range(1, 13)]
@@ -23,6 +26,9 @@ def render_race_inputs(
 ) -> dict[str, str | int]:
     defaults = defaults or {}
     st.sidebar.header("レース条件")
+    meeting = str(defaults.get("meeting", "") or "")
+    if meeting:
+        st.sidebar.caption(f"開催日程: {meeting}")
     course = st.sidebar.selectbox(
         "競馬場", COURSES, index=_option_index(COURSES, defaults.get("venue", defaults.get("course")), 3), key=f"{key_prefix}_course"
     )
@@ -60,6 +66,9 @@ def render_race_inputs(
         "race_course_day": race_course_day,
         "course_layout": course_layout,
         "track_bias": track_bias,
+        "meeting": meeting,
+        "organization": str(defaults.get("organization", "") or ""),
+        "corner_count": _bounded_int(defaults.get("corner_count"), 0, 0, 4),
     }
 
 
@@ -73,6 +82,9 @@ def default_horse_dataframe(count: int = 5) -> pd.DataFrame:
             "jockey": [""] * count,
             "horse_id": [""] * count,
             "horse_url": [""] * count,
+            "trainer": [""] * count,
+            "affiliation": [""] * count,
+            "organization": [""] * count,
         }
     )
 
@@ -121,8 +133,11 @@ def render_horse_editor(
             "jockey": st.column_config.TextColumn("騎手"),
             "horse_id": st.column_config.TextColumn("horse_id"),
             "horse_url": st.column_config.LinkColumn("horse_url"),
+            "trainer": st.column_config.TextColumn("厩舎"),
+            "affiliation": st.column_config.TextColumn("所属"),
+            "organization": st.column_config.TextColumn("主催区分"),
         },
-        disabled=["horse_id", "horse_url"],
+        disabled=["horse_id", "horse_url", "trainer", "affiliation", "organization"],
         key=key,
     )
 
@@ -144,6 +159,9 @@ def _normalize_horse_dataframe(
         "jockey": "",
         "horse_id": "",
         "horse_url": "",
+        "trainer": "",
+        "affiliation": "",
+        "organization": "",
     }
     for column, default in defaults.items():
         if column not in frame.columns:

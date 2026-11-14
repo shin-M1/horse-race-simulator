@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 import pandas as pd
 
 from course_db import get_course_bias
@@ -414,6 +416,108 @@ def style_group_table(pace_prediction: dict[str, object]) -> pd.DataFrame:
             },
         ]
     )
+
+
+def build_corner_position_table(
+    horse_analysis: pd.DataFrame,
+    pace_prediction: dict[str, object],
+    race_config: dict[str, object],
+) -> pd.DataFrame:
+    """Build a lightweight, deterministic corner-by-corner formation table."""
+    if horse_analysis is None or horse_analysis.empty:
+        return pd.DataFrame(columns=["位置"])
+
+    direction = str(race_config.get("direction", ""))
+    distance = _to_int(race_config.get("distance", 0))
+    configured_count = _to_int(race_config.get("corner_count", 0))
+    if direction == "直線":
+        phase_labels = ["序盤", "中盤", "終盤"]
+    else:
+        corner_count = configured_count or (2 if 0 < distance <= 1600 else 4)
+        phase_labels = ["第3コーナー", "第4コーナー"] if corner_count == 2 else [f"第{index}コーナー" for index in range(1, corner_count + 1)]
+
+    ranked_by_phase: dict[str, list[str]] = {}
+    for phase_index, label in enumerate(phase_labels):
+        progress = 0.5 if len(phase_labels) == 1 else phase_index / max(1, len(phase_labels) - 1)
+        ranked: list[tuple[float, int, str]] = []
+        for row_index, (_, row) in enumerate(horse_analysis.iterrows()):
+            number = _to_int(row.get("horse_number", row.get("馬番", row_index + 1))) or row_index + 1
+            name = str(row.get("horse_name", row.get("馬名", "")) or f"{number}番")
+            first_ratio = _row_ratio(row, "weighted_avg_first_ratio", "first_ratio平均", _profile_position(row))
+            mid_ratio = _row_ratio(row, "weighted_avg_mid_ratio", "mid_ratio平均", first_ratio)
+            last_ratio = _row_ratio(row, "weighted_avg_last_corner_ratio", "last_corner_ratio平均", mid_ratio)
+            early = first_ratio * (1.0 - progress) + mid_ratio * progress
+            late = mid_ratio * (1.0 - progress) + last_ratio * progress
+            position_score = early * (1.0 - progress) + late * progress
+
+            late_gain = _to_float(row.get("weighted_avg_late_gain", row.get("late_gain平均", 0.0)))
+            acceleration = _to_float(row.get("acceleration", 50.0))
+            move_strength = max(-0.08, min(0.16, late_gain * 0.018 + (acceleration - 50.0) / 700.0))
+            position_score -= move_strength * (progress ** 1.6)
+            frame = _to_int(row.get("frame", row.get("枠順", 5)))
+            position_score += max(-0.015, min(0.015, (frame - 4.5) * 0.003)) * (1.0 - progress)
+            pace = str(pace_prediction.get("pace", "medium"))
+            front_probability = _to_float(row.get("base_逃げ", 0.0)) + 0.7 * _to_float(row.get("base_先行", 0.0))
+            if pace == "high" and progress > 0.55:
+                position_score += front_probability * 0.035 * progress
+            elif pace == "slow" and progress > 0.55:
+                position_score -= front_probability * 0.025 * progress
+            ranked.append((position_score, number, f"{_circled_number(number)}{name}"))
+        ranked.sort(key=lambda item: (item[0], item[1]))
+        ranked_by_phase[label] = [item[2] for item in ranked]
+
+    rows: list[dict[str, str]] = []
+    groups = ["先頭集団", "中団", "後方集団"]
+    field_size = len(horse_analysis)
+    for group_index, group in enumerate(groups):
+        display_row = {"位置": group}
+        for label in phase_labels:
+            ordered = ranked_by_phase[label]
+            members = [horse for index, horse in enumerate(ordered) if min(2, (index * 3) // max(1, field_size)) == group_index]
+            display_row[label] = "、".join(members) or "-"
+        rows.append(display_row)
+    return pd.DataFrame(rows, columns=["位置", *phase_labels])
+
+
+def race_flow_summary(pace_prediction: dict[str, object], field_size: int) -> dict[str, str]:
+    pace = str(pace_prediction.get("pace", "medium"))
+    pace_label = {"slow": "スローペース", "medium": "ミドルペース", "high": "ハイペース"}.get(pace, pace)
+    front_pressure = _to_float(pace_prediction.get("front_pressure", 0.0))
+    pressure_per_horse = front_pressure / max(1, int(field_size))
+    if pressure_per_horse >= 0.42:
+        battle = "激しい"
+    elif pressure_per_horse >= 0.28:
+        battle = "やや激しい"
+    elif pressure_per_horse <= 0.14:
+        battle = "穏やか"
+    else:
+        battle = "標準"
+    favored = "差し・追込" if pace == "high" else "逃げ・先行" if pace == "slow" else "バランス"
+    return {"予想ペース": pace_label, "先行争い": battle, "展開有利": favored}
+
+
+def _profile_position(row: pd.Series) -> float:
+    probabilities = {
+        "逃げ": _to_float(row.get("base_逃げ", 0.0)),
+        "先行": _to_float(row.get("base_先行", 0.0)),
+        "差し": _to_float(row.get("base_差し", 0.0)),
+        "追込": _to_float(row.get("base_追込", 0.0)),
+    }
+    total = sum(probabilities.values())
+    if total <= 0:
+        return 0.5
+    centers = {"逃げ": 0.08, "先行": 0.28, "差し": 0.58, "追込": 0.86}
+    return sum(probabilities[key] * centers[key] for key in probabilities) / total
+
+
+def _row_ratio(row: pd.Series, primary: str, alias: str, default: float) -> float:
+    value = row.get(primary, row.get(alias, default))
+    parsed = _to_float(value)
+    return max(0.0, min(1.0, parsed if not math.isnan(parsed) else default))
+
+
+def _circled_number(number: int) -> str:
+    return chr(0x2460 + number - 1) if 1 <= number <= 20 else f"{number}番"
 
 
 def build_horse_comments_table(

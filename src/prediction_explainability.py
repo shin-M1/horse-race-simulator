@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import re
 from datetime import date, datetime
 from typing import Any
 
@@ -122,24 +123,24 @@ def infer_race_level_text(race: Any) -> str:
     row = race_row(race)
     race_class = str(_first_value(row, ["race_class", "class", "grade", "クラス"], "") or getattr(race, "race_class", ""))
     race_name = str(_first_value(row, ["race_name", "name", "race", "レース名"], "") or getattr(race, "race_name", ""))
-    text = f"{race_class} {race_name}".upper().replace("Ｊ", "J")
-    checks = [
-        ("JPN1", "Jpn1"),
-        ("JPN2", "Jpn2"),
-        ("JPN3", "Jpn3"),
-        ("G1", "G1"),
-        ("G2", "G2"),
-        ("G3", "G3"),
-        ("L", "L"),
-        ("OP", "OP"),
-        ("3勝", "3勝"),
-        ("2勝", "2勝"),
-        ("1勝", "1勝"),
-        ("未勝利", "未勝利"),
-        ("新馬", "新馬"),
+    text = f"{race_class} {race_name}".upper().replace("Ｊ", "J").replace("Ⅰ", "I").replace("Ⅱ", "II").replace("Ⅲ", "III")
+    patterns = [
+        (r"JPN\s*(?:1|I)(?!I)", "Jpn1"),
+        (r"JPN\s*(?:2|II)(?!I)", "Jpn2"),
+        (r"JPN\s*(?:3|III)", "Jpn3"),
+        (r"(?:^|[^A-Z])G\s*(?:1|I)(?!I)", "G1"),
+        (r"(?:^|[^A-Z])G\s*(?:2|II)(?!I)", "G2"),
+        (r"(?:^|[^A-Z])G\s*(?:3|III)", "G3"),
+        (r"LISTED|リステッド|\(L\)|(?:^|\s)L(?:\s|$)", "L"),
+        (r"オープン|(?:^|\s)OP(?:\s|$)", "OP"),
+        (r"3勝", "3勝"),
+        (r"2勝", "2勝"),
+        (r"1勝", "1勝"),
+        (r"未勝利", "未勝利"),
+        (r"新馬", "新馬"),
     ]
-    for token, label in checks:
-        if token in text:
+    for pattern, label in patterns:
+        if re.search(pattern, text):
             return label
     if "重賞" in text:
         return "地方重賞"
@@ -395,7 +396,9 @@ def enhance_prediction_table(
         strength_values = prepared.get("strength_values", [field_strength_score(race) for race in races])
         avg_strength = sum(strength_values) / len(strength_values) if strength_values else _row_number(row, "race_strength_score", 50.0)
         affiliations = prepared.get("affiliations", [classify_racing_affiliation(race) for race in races])
-        primary_affiliation = most_common(affiliations) if affiliations else "不明"
+        primary_affiliation = str(horse_meta.get("affiliation") or "").strip()
+        if not primary_affiliation:
+            primary_affiliation = most_common(affiliations) if affiliations else "不明"
         central_local_bonus = prepared.get("central_local_bonus", central_local_adjustment_score(affiliations, strength_values))
         track_profiles = prepared["track_profiles"] if prepared else [compute_track_speed_index(race, races) for race in races]
         track_score = sum(float(item["track_speed_score"]) for item in track_profiles) / len(track_profiles) if track_profiles else 50.0
@@ -486,17 +489,32 @@ def build_ai_evaluation_table(prediction_table: pd.DataFrame) -> pd.DataFrame:
         "連対率",
         "複勝率",
         "期待値",
-        "Prediction Confidence",
+        "予想信頼度",
         "prediction_confidence_stars",
-        "所属区分",
+        "所属",
         "最高レース格",
         "平均レースレベル",
         "中央地方補正",
-        "field_strength_score",
-        "track_speed_index",
-        "track_speed_category",
+        "相手レベル",
     ]
-    return prediction_table[[column for column in columns if column in prediction_table.columns]].copy()
+    display = prediction_table.copy()
+    aliases = {
+        "Prediction Confidence": "予想信頼度",
+        "所属区分": "所属",
+        "field_strength_score": "相手レベル",
+    }
+    for source, target in aliases.items():
+        if target not in display.columns and source in display.columns:
+            display[target] = display[source]
+    if "予想信頼度" in display.columns:
+        display["予想信頼度"] = display["予想信頼度"].map(
+            {"High": "高", "Medium": "中", "Low": "低", "Very Low": "非常に低"}
+        ).fillna(display["予想信頼度"])
+    if "最高レース格" in display.columns:
+        display["最高レース格"] = display["最高レース格"].map(
+            {"L": "リステッド", "OP": "オープン", "3勝": "3勝クラス", "2勝": "2勝クラス", "1勝": "1勝クラス"}
+        ).fillna(display["最高レース格"])
+    return display[[column for column in columns if column in display.columns]].copy()
 
 
 def build_prediction_reason_table(prediction_table: pd.DataFrame) -> pd.DataFrame:

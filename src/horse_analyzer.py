@@ -20,6 +20,13 @@ logger = logging.getLogger(__name__)
 
 STYLE_KEYS = ["逃げ", "先行", "差し", "追込"]
 STYLE_WEIGHTS = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1]
+STYLE_POSITION_BANDS = {
+    "逃げ": (0.00, 0.15),
+    "先行": (0.15, 0.40),
+    "差し": (0.40, 0.75),
+    "追込": (0.75, 1.00),
+}
+STYLE_PRIOR_WEIGHT = 0.40
 ABILITY_RECENCY_WEIGHTS = [1.00, 0.85, 0.70, 0.55, 0.40]
 RACE_LEVEL_WEIGHT = {
     "G1": 1.40,
@@ -109,15 +116,14 @@ def normalize_style_profile(profile: dict[str, float]) -> dict[str, float]:
 
 def primary_style_from_profile(profile: dict[str, float]) -> str:
     normalized = normalize_style_profile(profile)
-    ranked = sorted(normalized.items(), key=lambda item: item[1], reverse=True)
-    if ranked[0][1] < 0.40 or ranked[0][1] - ranked[1][1] < 0.10:
-        return "自在"
-    return ranked[0][0]
+    return max(STYLE_KEYS, key=lambda style: normalized[style])
 
 
 def create_base_style_profile(races: list[dict[str, Any] | "RaceResult"]) -> dict[str, float]:
     """Create a weighted soft running-style profile from up to ten past races."""
-    scores = {style: 0.0 for style in STYLE_KEYS}
+    # A small neutral prior prevents one valid race from creating a near-100%
+    # classification while preserving the ten-race recency-weighted signal.
+    scores = {style: STYLE_PRIOR_WEIGHT / len(STYLE_KEYS) for style in STYLE_KEYS}
     used_count = 0
     for index, race in enumerate(races[:10]):
         snapshot = race_style_snapshot(race)
@@ -852,9 +858,10 @@ def race_style_snapshot(race: dict[str, Any] | RaceResult) -> RaceStyleSnapshot 
         mid_pos = positions[len(positions) // 2]
         last_corner_pos = positions[-1]
 
-    first_ratio = first_pos / resolved_field_size
-    mid_ratio = mid_pos / resolved_field_size
-    last_ratio = last_corner_pos / resolved_field_size
+    ratio_denominator = max(1, resolved_field_size - 1)
+    first_ratio = (first_pos - 1) / ratio_denominator
+    mid_ratio = (mid_pos - 1) / ratio_denominator
+    last_ratio = (last_corner_pos - 1) / ratio_denominator
     late_gain = float(last_corner_pos - finish)
     debug = "-".join(str(position) for position in positions)
     return RaceStyleSnapshot(

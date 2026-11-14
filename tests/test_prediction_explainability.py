@@ -15,11 +15,13 @@ if str(SRC) not in sys.path:
 
 from horse_analyzer import RaceResult
 from prediction_explainability import (
+    build_ai_evaluation_table,
     build_prediction_confidence,
     build_shap_like_contributions,
     classify_racing_affiliation,
     compute_track_speed_index,
     field_strength_score,
+    enhance_prediction_table,
 )
 from public_prediction import build_public_prediction_result
 from weight_optimizer import walk_forward_validation
@@ -179,6 +181,23 @@ class PredictionExplainabilityTest(unittest.TestCase):
         ]:
             self.assertIn(column, table.columns)
         self.assertEqual(result["simulation_trials"], [])
+
+    def test_ai_evaluation_uses_entry_affiliation_and_hides_track_columns(self) -> None:
+        table = pd.DataFrame(
+            [{"horse_number": 1, "馬番": 1, "馬名": "H1", "prediction_score": 70.0, "win_rate": 0.2, "top2_rate": 0.4, "top3_rate": 0.6}]
+        )
+        enhanced = enhance_prediction_table(
+            table,
+            [ability(recent_results=[race(race_class="Jpn2", race_name="交流重賞", course="大井")])],
+            {"course": "東京", "surface": "芝", "distance": 1800},
+            [{"horse_number": 1, "horse_name": "H1", "affiliation": "大井", "organization": "NAR"}],
+        )
+        display = build_ai_evaluation_table(enhanced)
+
+        self.assertEqual(display.iloc[0]["所属"], "大井")
+        self.assertEqual(display.iloc[0]["最高レース格"], "Jpn2")
+        self.assertNotIn("track_speed_index", display.columns)
+        self.assertNotIn("track_speed_category", display.columns)
 
 
 if __name__ == "__main__":

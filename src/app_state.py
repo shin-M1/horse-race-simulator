@@ -55,6 +55,9 @@ def dataframe_to_horses(df: pd.DataFrame, count: int | None = None) -> list[dict
         jockey = str(row.get("jockey", "")).strip()
         horse_id = str(row.get("horse_id", "")).strip()
         horse_url = str(row.get("horse_url", "")).strip()
+        trainer = str(row.get("trainer", "")).strip()
+        affiliation = str(row.get("affiliation", "")).strip()
+        organization = str(row.get("organization", "")).strip()
         if not name and frame == 0 and horse_number == 0:
             continue
         horses.append(
@@ -66,6 +69,9 @@ def dataframe_to_horses(df: pd.DataFrame, count: int | None = None) -> list[dict
                 "jockey": jockey,
                 "horse_id": horse_id,
                 "horse_url": horse_url,
+                "trainer": trainer,
+                "affiliation": affiliation,
+                "organization": organization,
             }
         )
     return horses
