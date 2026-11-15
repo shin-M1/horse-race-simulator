@@ -17,6 +17,7 @@ from result_formatter import (
     build_horse_comments_table,
     build_recent_races_table,
     build_corner_position_table,
+    select_corner_position_table,
     extract_value,
     format_analysis_table,
     style_group_table,
@@ -162,6 +163,9 @@ class ResultFormatterTest(unittest.TestCase):
 
         self.assertEqual(list(table.columns), ["位置", "第1コーナー", "第2コーナー", "第3コーナー", "第4コーナー"])
         for column in table.columns[1:]:
+            selected = select_corner_position_table(table, column)
+            self.assertEqual(list(selected.columns), ["位置", column])
+            self.assertEqual(selected["位置"].tolist(), ["先頭集団", "中団", "後方集団"])
             displayed = "、".join(table[column].tolist())
             for i in range(1, 7):
                 self.assertEqual(displayed.count(f"馬{i}"), 1)
@@ -170,6 +174,21 @@ class ResultFormatterTest(unittest.TestCase):
         analysis = pd.DataFrame([{"horse_name": "A", "horse_number": 1, "base_先行": 1.0}])
         table = build_corner_position_table(analysis, {"pace": "slow"}, {"distance": 1000, "direction": "直線"})
         self.assertEqual(list(table.columns), ["位置", "序盤", "中盤", "終盤"])
+
+    def test_corner_selection_reuses_precomputed_table(self) -> None:
+        table = pd.DataFrame(
+            [
+                {"位置": "先頭集団", "第1コーナー": "①A", "第2コーナー": "②B"},
+                {"位置": "中団", "第1コーナー": "②B", "第2コーナー": "②B、①A"},
+            ]
+        )
+        selected = select_corner_position_table(table, "第2コーナー")
+        self.assertEqual(list(selected.columns), ["位置", "第2コーナー"])
+        self.assertEqual(selected["位置"].tolist(), ["先頭集団", "中団", "後方集団"])
+        self.assertEqual(selected.iloc[0]["第2コーナー"], "②B")
+        self.assertEqual(selected.iloc[1]["第2コーナー"], "①A")
+        self.assertEqual(selected.iloc[2]["第2コーナー"], "-")
+        self.assertEqual("、".join(selected["第2コーナー"].tolist()).count("②B"), 1)
 
     def test_build_horse_comments_table_outputs_all_horse_comments(self) -> None:
         prediction_table = pd.DataFrame(

@@ -150,6 +150,7 @@ from result_formatter import (
     pace_comment,
     build_corner_position_table,
     race_flow_summary,
+    select_corner_position_table,
     style_probability_long_table,
 )
 from ui_components import render_horse_editor, render_race_inputs, show_dataframe_safe
@@ -2415,12 +2416,27 @@ def render_results(result: dict[str, object], debug_mode: bool = False, predicti
     st.write(pace_comment(pace_prediction))
     st.info(f"コースバイアス：{get_course_bias(result.get('race_config', {})).get('comment', '')}")
     if isinstance(horse_analysis, pd.DataFrame):
-        corner_table = build_corner_position_table(
-            horse_analysis,
-            pace_prediction,
-            result.get("race_config", {}),
-        )
-        show_dataframe_safe(corner_table, width="stretch", hide_index=True)
+        corner_table = result.get("corner_position_table")
+        if not isinstance(corner_table, pd.DataFrame) or corner_table.empty:
+            corner_table = build_corner_position_table(
+                horse_analysis,
+                pace_prediction,
+                result.get("race_config", {}),
+            )
+            result["corner_position_table"] = corner_table
+        corner_options = [column for column in corner_table.columns if column != "位置"]
+        if corner_options:
+            race_id = str(result.get("race_config", {}).get("race_id", "race"))
+            selected_corner = st.selectbox(
+                "表示するコーナー",
+                corner_options,
+                key=f"race_flow_corner_{race_id}",
+            )
+            show_dataframe_safe(
+                select_corner_position_table(corner_table, selected_corner),
+                width="stretch",
+                hide_index=True,
+            )
 
     prediction = result.get("prediction")
     if isinstance(prediction, dict):

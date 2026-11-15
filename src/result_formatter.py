@@ -479,6 +479,35 @@ def build_corner_position_table(
     return pd.DataFrame(rows, columns=["位置", *phase_labels])
 
 
+def select_corner_position_table(corner_table: pd.DataFrame, phase: str) -> pd.DataFrame:
+    """Return one precomputed corner view without recalculating race prediction."""
+    if (
+        corner_table is None
+        or corner_table.empty
+        or "位置" not in corner_table.columns
+        or phase not in corner_table.columns
+    ):
+        return pd.DataFrame(columns=["位置", str(phase)])
+
+    groups = ("先頭集団", "中団", "後方集団")
+    seen_horses: set[str] = set()
+    selected_rows: list[dict[str, str]] = []
+    for group in groups:
+        matching_rows = corner_table.loc[corner_table["位置"] == group, phase]
+        raw_value = matching_rows.iloc[0] if not matching_rows.empty else ""
+        members = [] if pd.isna(raw_value) else str(raw_value).split("、")
+        unique_members: list[str] = []
+        for member in members:
+            normalized_member = member.strip()
+            if not normalized_member or normalized_member == "-" or normalized_member in seen_horses:
+                continue
+            seen_horses.add(normalized_member)
+            unique_members.append(normalized_member)
+        selected_rows.append({"位置": group, str(phase): "、".join(unique_members) or "-"})
+
+    return pd.DataFrame(selected_rows, columns=["位置", str(phase)])
+
+
 def race_flow_summary(pace_prediction: dict[str, object], field_size: int) -> dict[str, str]:
     pace = str(pace_prediction.get("pace", "medium"))
     pace_label = {"slow": "スローペース", "medium": "ミドルペース", "high": "ハイペース"}.get(pace, pace)
